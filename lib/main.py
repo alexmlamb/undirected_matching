@@ -6,15 +6,35 @@
 '''
 import theano
 import theano.tensor as T
+from nn_layers import fflayer, param_init_fflayer
+
+def gparams(p):
+
+def dparams(p):
 
 def z_to_x(z):
 
 def x_to_z(x):
 
-def p_chain():
+def p_chain(z, num_iterations):
+    zlst = []
+    xlst = []
 
-def q_chain():
+    xlst.append(z_to_x(z))
 
+    for i in range(num_iterations-1):
+        zlst.append(x_to_z(xlst[-1]))
+        xlst.append(z_to_x(zlst[-1]))
+    
+    return xlst, zlst
+
+
+def q_chain(x):
+
+    xlst = [x]
+    zlst = [x_to_z(x)]
+
+    return xlst, zlst
 
 def discriminator(x,z):
     

@@ -55,7 +55,8 @@ def param_init_fflayer(options,
                        prefix='ff',
                        nin=None,
                        nout=None,
-                       ortho=True):
+                       ortho=True,
+                       batch_norm=False):
 
     params[prefix + '_W'] = norm_weight(nin, nout)
     params[prefix + '_b'] = zero_vector(nout)
@@ -68,10 +69,13 @@ def fflayer(tparams,
             options,
             prefix='rconv',
             activ='lambda x: tensor.tanh(x)',
+            batch_norm='False',
             **kwargs):
-    return eval(activ)(tensor.dot(state_below, tparams[prefix + '_W']) +
-                       tparams[prefix + '_b'])
+    preactivation = tensor.dot(state_below, tparams[prefix + '_W']) +tparams[prefix + '_b']
 
+    preactivation = (preactivation - preactivation.mean(axis=0)) / (0.01 + preactivation.stdv(axis=0))
+
+    return eval(activ)(preactivation)
 
 # GRU layer
 def param_init_gru(options, param, prefix='gru', nin=None, dim=None):
