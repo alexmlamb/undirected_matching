@@ -32,6 +32,16 @@ def init_dparams(p):
 
     return init_tparams(p)
 
+def init_cparams(p):
+
+    p = param_init_fflayer(options={},params=p,prefix='c_1',nin=128,nout=1,ortho=True,batch_norm=False)
+
+    return init_tparams(p)
+
+def classifier(p,z):
+
+    return loss,acc
+
 def z_to_x(p,z):
     h1 = fflayer(tparams=p,state_below=z,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
     x = fflayer(tparams=p,state_below=h1,options={},prefix='z_x_2',activ='lambda x: x',batch_norm=False)
@@ -90,7 +100,11 @@ p_lst_x,p_lst_z = p_chain(gparams, z_in, 5)
 
 q_lst_x,q_lst_z = q_chain(gparams, x_in)
 
-print p_lst_x, p_lst_z
-print q_lst_x, q_lst_z
+print p_lst_x
+print p_lst_z
+print q_lst_x
+print q_lst_z
+
+
 
 
