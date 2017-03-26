@@ -9,7 +9,6 @@ import inspect
 from collections import OrderedDict
 import time
 import os
-from data_iterator import  txt_to_word_inps
 from sklearn.cross_validation import KFold
 
 # make prefix-appended name
@@ -36,34 +35,6 @@ def create_log_dir(suffix, model_id):
     os.makedirs(model_dir)
     return model_dir
 
-def perplexity(f_cost, lines, word_dict, opts):
-     """
-     compute perplexity over the validation/test data
-     Parameters
-     ----------
-     f_cost     : compiled function, computation for the forward pass
-     lines      : list of string, validation/test data
-     word_dict  : OrderedDict, {word: index}
-     opts       : dictionary, {hyperparameter: value}
-     Returns
-     -------
-     cost       : numpy float32, perplexity
-     """
-     n_lines = len(lines)
-     cost = 0.
-     n_words = 0.
-     total_n_words = 0.
-     batch_size = 64
-     kf_train = KFold(n_lines, n_folds=n_lines/(batch_size-1), shuffle=False)
-     for _, index in kf_train:
-         x = [lines[i] for i in index]
-         x_, x_mask_ = txt_to_word_inps(x, word_dict, opts)
-         n_words = x_mask_.sum()
-         cost_one = f_cost(x_, (1 -  x_mask_)) * x_.shape[1]
-         cost += cost_one
-         total_n_words += n_words
-     cost = numpy.exp(cost / total_n_words)
-     return cost
 
 
 
@@ -71,6 +42,8 @@ def perplexity(f_cost, lines, word_dict, opts):
 # get the list of parameters: Note that tparams must be OrderedDict
 def itemlist(tparams):
     return [vv for kk, vv in six.iteritems(tparams)]
+
+srng = theano.tensor.shared_randomstreams.RandomStreams(42)
 
 
 # dropout
@@ -84,8 +57,8 @@ def dropout_layer(state_before, use_noise, trng):
                          state_before * 0.5)
     return proj
 
-def join2():
-    pass
+def join2(a,b):
+    return tensor.concatenate([a,b],axis=1)
 
 # initialize Theano shared variables according to the initial parameters
 def init_tparams(params):

@@ -7,11 +7,11 @@
 import theano
 import theano.tensor as T
 from nn_layers import fflayer, param_init_fflayer
-from utils init_tparams, join2
+from utils import init_tparams, join2, srng
 
 m = 1
 
-def gparams(p):
+def init_gparams(p):
 
 
     p = param_init_fflayer(options={},params=p,prefix='z_x_1',nin=128,nout=512,ortho=True,batch_norm=False)
@@ -23,7 +23,7 @@ def gparams(p):
 
     return init_tparams(p)
 
-def dparams(p):
+def init_dparams(p):
 
 
     p = param_init_fflayer(options={},params=p,prefix='D_1',nin=128+m,nout=512,ortho=True,batch_norm=False)
@@ -38,7 +38,7 @@ def z_to_x(p,z):
 
     return x
 
-def x_to_z(x):
+def x_to_z(p,x):
 
     h1 = fflayer(tparams=p,state_below=x,options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
     sigma = fflayer(tparams=p,state_below=h1,options={},prefix='x_z_mu',activ='lambda x: tensor.exp(x)',batch_norm=False)
@@ -59,29 +59,38 @@ def discriminator(p,x,z):
 
     return D
 
-def p_chain(z, num_iterations):
-    zlst = []
+def p_chain(p, z, num_iterations):
+    zlst = [z]
     xlst = []
 
-    xlst.append(z_to_x(z))
+    xlst.append(z_to_x(p,z))
 
     for i in range(num_iterations-1):
-        zlst.append(x_to_z(xlst[-1]))
-        xlst.append(z_to_x(zlst[-1]))
+        zlst.append(x_to_z(p,xlst[-1]))
+        xlst.append(z_to_x(p,zlst[-1]))
     
     return xlst, zlst
 
 
-def q_chain(x):
+def q_chain(p,x):
 
     xlst = [x]
-    zlst = [x_to_z(x)]
+    zlst = [x_to_z(p,x)]
 
     return xlst, zlst
 
-    
 
+gparams = init_gparams({})
+dparams = init_dparams({})
 
+z_in = T.matrix()
+x_in = T.matrix()
 
+p_lst_x,p_lst_z = p_chain(gparams, z_in, 5)
+
+q_lst_x,q_lst_z = q_chain(gparams, x_in)
+
+print p_lst_x, p_lst_z
+print q_lst_x, q_lst_z
 
 
