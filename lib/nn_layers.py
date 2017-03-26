@@ -74,7 +74,7 @@ def fflayer(tparams,
     preactivation = tensor.dot(state_below, tparams[prefix + '_W']) +tparams[prefix + '_b']
 
     if batch_norm:
-        preactivation = (preactivation - preactivation.mean(axis=0)) / (0.01 + preactivation.std(axis=0))
+        preactivation = (preactivation - preactivation.mean(axis=0)) / (0.0001 + preactivation.std(axis=0))
 
     return eval(activ)(preactivation)
 
