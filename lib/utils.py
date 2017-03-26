@@ -84,6 +84,8 @@ def dropout_layer(state_before, use_noise, trng):
                          state_before * 0.5)
     return proj
 
+def join2():
+    pass
 
 # initialize Theano shared variables according to the initial parameters
 def init_tparams(params):
