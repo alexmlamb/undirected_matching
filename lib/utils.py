@@ -45,6 +45,8 @@ def itemlist(tparams):
 
 srng = theano.tensor.shared_randomstreams.RandomStreams(42)
 
+def dropout(inp,p=0.5):
+    return inp * tensor.cast(srng.binomial(n=1,p=p,size=inp.shape),'float32')
 
 # dropout
 def dropout_layer(state_before, use_noise, trng):

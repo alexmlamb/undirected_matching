@@ -70,11 +70,20 @@ def fflayer(tparams,
             prefix='rconv',
             activ='lambda x: tensor.tanh(x)',
             batch_norm=False,
+            layer_norm=False,
+            mean_ln=False,
+            mean_bn=False,
             **kwargs):
     preactivation = tensor.dot(state_below, tparams[prefix + '_W']) +tparams[prefix + '_b']
 
     if batch_norm:
         preactivation = (preactivation - preactivation.mean(axis=0)) / (0.0001 + preactivation.std(axis=0))
+    if layer_norm:
+        preactivation = (preactivation - preactivation.mean(axis=1,keepdims=True)) / (0.0000001 + preactivation.std(axis=1,keepdims=True))
+    if mean_bn:
+        preactivation = (preactivation - preactivation.mean(axis=0)) + tparams[prefix + '_b']
+    if mean_ln:
+        preactivation = (preactivation - preactivation.mean(axis=1,keepdims=True)) + tparams[prefix + '_b']
 
     return eval(activ)(preactivation)
 
