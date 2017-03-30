@@ -30,6 +30,19 @@ def clip_updates(updates, params):
         new_updates.append((p,u))
     return new_updates
 
+def lsgan_loss(D_q_lst, D_p_lst):
+    dloss = 0.0
+    gloss = 0.0
+
+    for i in range(len(D_q_lst)):
+        D_q = D_q_lst[i]
+        D_p = D_p_lst[i]
+        dloss += T.mean(T.sqr(1.0 - D_q)) + T.mean(T.sqr(0.0 - D_p))
+        gloss += T.mean(T.sqr(1.0 - D_p)) + T.mean(T.sqr(0.0 - D_q))
+
+    return dloss / len(D_q_lst), gloss / len(D_q_lst)
+
+
 if __name__ == "__main__":
 
     p = T.matrix()

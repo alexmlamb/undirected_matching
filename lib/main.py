@@ -15,7 +15,7 @@ import theano
 import theano.tensor as T
 from nn_layers import fflayer, param_init_fflayer
 from utils import init_tparams, join2, srng, dropout
-from loss import accuracy, crossent
+from loss import accuracy, crossent, lsgan_loss
 import lasagne
 import numpy as np
 import numpy.random as rng
@@ -44,6 +44,7 @@ testx, testy = test
 
 m = 784
 nl = 128
+#128 works for nl
 nfg = 1024
 nfd = 1024
 
@@ -77,15 +78,19 @@ def init_dparams(p):
 
 def init_cparams(p):
 
-    p = param_init_fflayer(options={},params=p,prefix='c_1',nin=nl,nout=512,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='c_2',nin=512,nout=10,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='c_1',nin=nl+784,nout=512,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='c_2',nin=512,nout=512,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='c_3',nin=512,nout=10,ortho=False,batch_norm=False)
 
     return init_tparams(p)
 
-def classifier(p,z,true_y):
+def classifier(p,z,x,true_y):
 
-    h1 = fflayer(tparams=p,state_below=z,options={},prefix='c_1',activ='lambda x: tensor.nnet.relu(x)',batch_norm=False)
-    y_est = fflayer(tparams=p,state_below=h1,options={},prefix='c_2',activ='lambda x: x',batch_norm=False)
+    h1 = fflayer(tparams=p,state_below=join2(z*0.0,x),options={},prefix='c_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+
+    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='c_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+
+    y_est = fflayer(tparams=p,state_below=h2,options={},prefix='c_3',activ='lambda x: x',batch_norm=False)
 
     y_est = T.nnet.softmax(y_est)
 
@@ -117,7 +122,7 @@ def x_to_z(p,x):
 
     eps = srng.normal(size=sigma.shape)
 
-    z = eps*T.nnet.sigmoid(sigma)*1.0 + mu
+    z = eps*T.nnet.sigmoid(sigma)*0.0 + mu
 
     z = (z - T.mean(z, axis=0, keepdims=True)) / (0.001 + T.std(z, axis=0, keepdims=True))
 
@@ -125,22 +130,19 @@ def x_to_z(p,x):
 
 def discriminator(p,x,z):
 
-    #hx = fflayer(tparams=p,state_below=x,options={},prefix='D_x',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',mean_ln=False)
-    #hz = fflayer(tparams=p,state_below=z,options={},prefix='D_z',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',mean_ln=False)
-
     inp = join2(x,z)
 
     h1 = fflayer(tparams=p,state_below=inp,options={},prefix='D_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',mean_ln=False)
 
     h2 = fflayer(tparams=p,state_below=h1,options={},prefix='D_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)', mean_ln=False)
 
-    h3 = fflayer(tparams=p,state_below=h1,options={},prefix='D_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)', mean_ln=False)
+    h3 = fflayer(tparams=p,state_below=h2,options={},prefix='D_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)', mean_ln=False)
 
     D1 = fflayer(tparams=p,state_below=h1,options={},prefix='D_o_1',activ='lambda x: x',batch_norm=False)
     D2 = fflayer(tparams=p,state_below=h2,options={},prefix='D_o_2',activ='lambda x: x',batch_norm=False)
     D3 = fflayer(tparams=p,state_below=h3,options={},prefix='D_o_3',activ='lambda x: x',batch_norm=False)
 
-    return [D1,D2,D3]
+    return [D1,D2,D3], h3
 
 def p_chain(p, z, num_iterations):
     zlst = [z]
@@ -151,7 +153,7 @@ def p_chain(p, z, num_iterations):
 
     if num_iterations == 2:
         xlst.append(z_to_x(p,z))
-        zlst.append(x_to_z(p,xlst[-1]))
+        zlst.append(x_to_z(p,consider_constant(xlst[-1])))
         xlst.append(z_to_x(p,zlst[-1]))
 
     if num_iterations == 3:
@@ -170,7 +172,6 @@ def p_chain(p, z, num_iterations):
 
     return xlst, zlst
 
-
 def q_chain(p,x):
 
     xlst = [x]
@@ -186,7 +187,7 @@ z_in = T.matrix()
 x_in = T.matrix()
 true_y = T.ivector()
 
-p_lst_x,p_lst_z = p_chain(gparams, z_in, 3)
+p_lst_x,p_lst_z = p_chain(gparams, z_in, 1)
 
 q_lst_x,q_lst_z = q_chain(gparams, x_in)
 
@@ -197,40 +198,34 @@ print p_lst_z
 print q_lst_x
 print q_lst_z
 
-closs,cacc = classifier(cparams,z_in,true_y)
+D_p_lst,D_feat_p = discriminator(dparams, p_lst_x[-1], p_lst_z[-1])
+D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
 
-D_p_lst = discriminator(dparams, p_lst_x[-1], p_lst_z[-1])
-D_q_lst = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
-
-def lsgan_loss(D_q_lst, D_p_lst):
-    dloss = 0.0
-    gloss = 0.0
-
-    for i in range(len(D_q_lst)):
-        D_q = D_q_lst[i]
-        D_p = D_p_lst[i]
-        dloss += T.mean(T.sqr(1.0 - D_q)) + T.mean(T.sqr(0.0 - D_p))
-        gloss += T.mean(T.sqr(1.0 - D_p)) + T.mean(T.sqr(0.0 - D_q))
-
-    return dloss / len(D_q_lst), gloss / len(D_q_lst)
+closs,cacc = classifier(cparams,z_inf,x_in,true_y)
 
 dloss, gloss = lsgan_loss(D_q_lst, D_p_lst)
 
-cupdates = lasagne.updates.rmsprop(closs, cparams.values(),0.0001)
+#cupdates = lasagne.updates.rmsprop(closs, cparams.values(),0.0001)
 
 dupdates = lasagne.updates.rmsprop(dloss, dparams.values(),0.0001)
 gloss_grads = T.grad(gloss, gparams.values(), disconnected_inputs='ignore')
 gupdates = lasagne.updates.rmsprop(gloss_grads, gparams.values(),0.0001)
 
-#train_disc = theano.function(inputs = [x_in,z_in], outputs=[z_inf,dloss],updates=dupdates)
-#train_gen = theano.function(inputs = [x_in,z_in], outputs=[p_lst_x[-1]],updates=gupdates)
+gcupdates = lasagne.updates.rmsprop(closs + gloss, cparams.values() + gparams.values(),0.0001)
 
-dgupdates = dupdates
+dgupdates = dupdates.copy()
 dgupdates.update(gupdates)
 
-train_disc_gen = theano.function([x_in,z_in],outputs=[z_inf,dloss,p_lst_x[-1]],updates=dgupdates)
-train_classifier = theano.function(inputs = [z_in, true_y], outputs=[cacc], updates=cupdates)
+dgcupdates = dupdates.copy()
+dgcupdates.update(gcupdates)
+
+train_disc_gen = theano.function([x_in,z_in],outputs=[dloss,p_lst_x[-1]],updates=dgupdates)
+
+train_disc_gen_classifier = theano.function(inputs = [x_in, z_in, true_y], outputs=[dloss,p_lst_x[-1],cacc], updates=dgcupdates)
+
+test_classifier = theano.function(inputs = [x_in, true_y], outputs=[cacc])
 get_zinf = theano.function([x_in], outputs=z_inf)
+get_dfeat = theano.function([x_in], outputs=D_feat_q)
 
 reconstruct = theano.function([x_in], outputs = z_to_x(gparams,x_to_z(gparams,x_in)))
 
@@ -244,9 +239,7 @@ if __name__ == '__main__':
 
         x_in = trainx[r:r+64].reshape((64,784))
 
-        z_inf, dloss,gen_x = train_disc_gen(x_in,z_in)
-
-        acc = train_classifier(z_inf, trainy[r:r+64].astype('int32'))
+        dloss,gen_x,acc = train_disc_gen_classifier(x_in,z_in, trainy[r:r+64].astype('int32'))
 
         if iteration % 1000 == 0:
             print iteration, "acc", acc
@@ -255,12 +248,15 @@ if __name__ == '__main__':
             plot_images(reconstruct(x_in).reshape((64,1,28,28)), "plots/rec.png")
             plot_images(x_in.reshape((64,1,28,28)), "plots/original.png")
             
-            z_inf = get_zinf(trainx[0:200])
-            print "z_inf shape", z_inf.shape
-            plt.scatter(z_inf[:,0], z_inf[:,1],c=trainy[0:200])
-            plt.savefig("plots/zinf.png")
-            plt.clf()
+            #z_inf = get_zinf(trainx[0:200])
+            #print "z_inf shape", z_inf.shape
+            #plt.scatter(z_inf[:,0], z_inf[:,1],c=trainy[0:200])
+            #plt.savefig("plots/zinf.png")
+            #plt.clf()
 
-
+            test_acc_lst=[]
+            for b in range(0,10000,500):
+                test_acc_lst.append(test_classifier(testx[b:b+500], testy[b:b+500].astype('int32'))[0])
+            print "test acc", sum(test_acc_lst) / len(test_acc_lst)
 
 
