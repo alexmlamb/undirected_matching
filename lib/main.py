@@ -14,7 +14,7 @@ sys.path.append("/u/lambalex/DeepLearning/undirected_matching/lib")
 import theano
 import theano.tensor as T
 from nn_layers import fflayer, param_init_fflayer
-from utils import init_tparams, join2, srng, dropout
+from utils import init_tparams, join2, srng, dropout, inverse_sigmoid
 from loss import accuracy, crossent, lsgan_loss
 import lasagne
 import numpy as np
@@ -46,12 +46,13 @@ validx,validy = valid
 testx, testy = test
 
 m = 784
-nl = 1024
+nl = 128
 #128 works for nl
 nfg = 1024
 nfd = 1024
 
-num_steps = 3
+#3
+num_steps = 1
 print "num steps", num_steps
 
 train_classifier_separate = True
@@ -60,7 +61,7 @@ print "train classifier separate", train_classifier_separate
 skip_conn = False
 print "skip conn", skip_conn
 
-latent_sparse = True
+latent_sparse = False
 print "latent sparse", latent_sparse
 
 def init_gparams(p):
@@ -211,6 +212,14 @@ def p_chain(p, z, num_iterations):
         zlst.append(x_to_z(p,consider_constant(xlst[-1])))
         xlst.append(z_to_x(p,zlst[-1]) + consider_constant(xlst[-1]))
 
+    if num_iterations == 20:
+        xlst.append(z_to_x(p,z))
+        for inds in range(0,20-2):
+            zlst.append(x_to_z(p,xlst[-1]))
+            xlst.append(z_to_x(p,zlst[-1]) + xlst[-1])
+        zlst.append(x_to_z(p,consider_constant(xlst[-1])))
+        xlst.append(z_to_x(p,zlst[-1]) + consider_constant(xlst[-1]))
+
     for j in range(0,len(xlst)):
         xlst[j] = T.nnet.sigmoid(xlst[j])
 
@@ -225,7 +234,9 @@ def p_chain(p, z, num_iterations):
 def q_chain(p,x):
 
     xlst = [x]
-    zlst = [x_to_z(p,x)]
+    print "INVERSE SIGMOID IN Q CHAIN"
+    #INVERSE SIG TURNED OFF
+    zlst = [x_to_z(p,inverse_sigmoid(x))]
 
     return xlst, zlst
 
@@ -250,8 +261,10 @@ print p_lst_z
 print q_lst_x
 print q_lst_z
 
-D_p_lst,D_feat_p = discriminator(dparams, p_lst_x[-1], p_lst_z[-1])
-D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
+#TODO: turned off z in discriminator!  Sanity check!  
+print "TURNED Z IN DISC OFF"
+D_p_lst,D_feat_p = discriminator(dparams, p_lst_x[-1], 0.0*p_lst_z[-1])
+D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], 0.0*q_lst_z[-1])
 
 closs,cacc = classifier(cparams,z_inf,x_in,true_y)
 
@@ -281,10 +294,13 @@ get_dfeat = theano.function([x_in], outputs=D_feat_q)
 
 get_pchain = theano.function([z_in], outputs = p_lst_x_long)
 
-reconstruct = theano.function([x_in], outputs = z_to_x(gparams,x_to_z(gparams,x_in)))
+if skip_conn: 
+    #reconstruct = theano.function([x_in], outputs = x_in +  z_to_x(gparams,x_to_z(gparams,x_in)))
+    reconstruct = theano.function([x_in], outputs = T.nnet.sigmoid(inverse_sigmoid(x_in) +  z_to_x(gparams,x_to_z(gparams,x_in))))
+else:
+    reconstruct = theano.function([x_in], outputs = z_to_x(gparams,x_to_z(gparams,x_in)))
 
-print "TRYING WITH NO INITIAL NOISE"
-#TODO: remove
+print "DOING INPAINTING"
 
 if __name__ == '__main__':
 
@@ -294,8 +310,6 @@ if __name__ == '__main__':
 
         if latent_sparse:
             z_in[:,128:] *= 0.0
-
-        z_in *= 0.0
 
         r = random.randint(0,50000-64)
 
@@ -308,6 +322,14 @@ if __name__ == '__main__':
             print "dloss", dloss
             plot_images(gen_x.reshape((64,1,28,28)), "plots/" + slurm_name + "_gen.png")
             plot_images(reconstruct(x_in).reshape((64,1,28,28)), "plots/" + slurm_name + "_rec.png")
+
+            #NOT CORRECT INITIALLY
+            #rec_loop = [x_in]
+            #for b in range(0,9):
+            #    rec_loop.append(reconstruct(rec_loop[-1]))
+            #    rec_loop[-1][:,0:392] = x_in[:,0:392]
+            #    plot_images(rec_loop[-1].reshape((64,1,28,28)), "plots/" + slurm_name + "_rec_" + str(b) +".png")
+
             plot_images(x_in.reshape((64,1,28,28)), "plots/" + slurm_name + "_original.png")
             
             #z_inf = get_zinf(trainx[0:200])
@@ -326,4 +348,5 @@ if __name__ == '__main__':
             for j in range(0,len(p_chain)):
                 print "printing element of p_chain", j
                 plot_images(p_chain[j].reshape((64,1,28,28)), "plots/" + slurm_name + "_pchain_" + str(j) + ".png")
+
 

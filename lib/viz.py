@@ -112,6 +112,9 @@ def plot_images(X, fname, title=""):
     Plot images in a grid.
     X is expected to be a 4d tensor of dimensions [# images]x[# colors]x[height]x[width]
     """
+    
+    X = X.clip(0.0,1.0)
+    
     ## plot
     # move color to end
     Xcol = X.reshape((X.shape[0],-1,)).T
