@@ -52,13 +52,13 @@ nfg = 1024
 nfd = 1024
 
 #3
-num_steps = 1
+num_steps = 3
 print "num steps", num_steps
 
 train_classifier_separate = True
 print "train classifier separate", train_classifier_separate
 
-skip_conn = False
+skip_conn = True
 print "skip conn", skip_conn
 
 latent_sparse = False
@@ -118,8 +118,9 @@ def classifier(p,z,x,true_y):
 
 def z_to_x(p,z):
 
+    inp = z
 
-    h1 = fflayer(tparams=p,state_below=z,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+    h1 = fflayer(tparams=p,state_below=inp,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
     
 
     h2 = fflayer(tparams=p,state_below=h1,options={},prefix='z_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
@@ -173,61 +174,33 @@ def p_chain(p, z, num_iterations):
         zlst.append(x_to_z(p,consider_constant(xlst[-1])))
         xlst.append(z_to_x(p,zlst[-1]))
 
-    if num_iterations == 3 and skip_conn:
-        print "consider const turned on"
-        print "special skip connections"
-        xlst.append(z_to_x(p,z))
-        zlst.append(x_to_z(p,xlst[-1]))
-        xlst.append(z_to_x(p,zlst[-1]) + xlst[-1])
-        zlst.append(x_to_z(p,consider_constant(xlst[-1])))
-        xlst.append(z_to_x(p,zlst[-1]) + consider_constant(xlst[-1]))
+    if num_iterations > 2 and skip_conn:
+        print "skip connections"
+        eps = 0.1
+        print "eps", eps
 
-    if num_iterations == 3 and (not skip_conn):
-        xlst.append(z_to_x(p,z))
-        zlst.append(x_to_z(p,xlst[-1]))
-        xlst.append(z_to_x(p,zlst[-1]))
-        zlst.append(x_to_z(p,consider_constant(xlst[-1])))
-        xlst.append(z_to_x(p,zlst[-1]))
-
-    if num_iterations == 10:
-        print "consider const turned on"
-        print "special skip connections"
-        xlst.append(z_to_x(p,z))
-        zlst.append(x_to_z(p,xlst[-1]))
-        xlst.append(z_to_x(p,zlst[-1]) + xlst[-1])
-        zlst.append(x_to_z(p,xlst[-1]))
-        xlst.append(z_to_x(p,zlst[-1]) + xlst[-1])
-        zlst.append(x_to_z(p,xlst[-1]))
-        xlst.append(z_to_x(p,zlst[-1]) + xlst[-1])
-        zlst.append(x_to_z(p,xlst[-1]))
-        xlst.append(z_to_x(p,zlst[-1]) + xlst[-1])
-        zlst.append(x_to_z(p,xlst[-1]))
-        xlst.append(z_to_x(p,zlst[-1]) + xlst[-1])
-        zlst.append(x_to_z(p,xlst[-1]))
-        xlst.append(z_to_x(p,zlst[-1]) + xlst[-1])
-        zlst.append(x_to_z(p,xlst[-1]))
-        xlst.append(z_to_x(p,zlst[-1]) + xlst[-1])
-        zlst.append(x_to_z(p,xlst[-1]))
-        xlst.append(z_to_x(p,zlst[-1]) + xlst[-1])
-        zlst.append(x_to_z(p,consider_constant(xlst[-1])))
-        xlst.append(z_to_x(p,zlst[-1]) + consider_constant(xlst[-1]))
-
-    if num_iterations == 20:
-        xlst.append(z_to_x(p,z))
-        for inds in range(0,20-2):
+        xlst.append(z_to_x(p,z)*eps)
+        for inds in range(0,num_iterations-2):
             zlst.append(x_to_z(p,xlst[-1]))
-            xlst.append(z_to_x(p,zlst[-1]) + xlst[-1])
+            xlst.append(z_to_x(p,zlst[-1]) * (eps) + (1-eps)* xlst[-1])
         zlst.append(x_to_z(p,consider_constant(xlst[-1])))
-        xlst.append(z_to_x(p,zlst[-1]) + consider_constant(xlst[-1]))
+        xlst.append(z_to_x(p,zlst[-1]) * (eps) + (1-eps)*consider_constant(xlst[-1]))
+
+
+    if num_iterations > 2 and (not skip_conn):
+        print "NO skip connections"
+
+        xlst.append(z_to_x(p,z))
+        for inds in range(0,num_iterations-2):
+            zlst.append(x_to_z(p,xlst[-1]))
+            xlst.append(z_to_x(p,zlst[-1]))
+        zlst.append(x_to_z(p,consider_constant(xlst[-1])))
+        xlst.append(z_to_x(p,zlst[-1]))
 
     for j in range(0,len(xlst)):
         xlst[j] = T.nnet.sigmoid(xlst[j])
 
-    #xlst.append(z_to_x(p,z))
 
-    #for i in range(num_iterations-1):
-    #    zlst.append(x_to_z(p,xlst[-1]))
-    #    xlst.append(z_to_x(p,zlst[-1]))
 
     return xlst, zlst
 
@@ -252,7 +225,7 @@ p_lst_x,p_lst_z = p_chain(gparams, z_in, num_steps)
 
 q_lst_x,q_lst_z = q_chain(gparams, x_in)
 
-p_lst_x_long,p_lst_z_long = p_chain(gparams, z_in,10)
+p_lst_x_long,p_lst_z_long = p_chain(gparams, z_in,20)
 
 z_inf = q_lst_z[-1]
 
@@ -262,9 +235,9 @@ print q_lst_x
 print q_lst_z
 
 #TODO: turned off z in discriminator!  Sanity check!  
-print "TURNED Z IN DISC OFF"
-D_p_lst,D_feat_p = discriminator(dparams, p_lst_x[-1], 0.0*p_lst_z[-1])
-D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], 0.0*q_lst_z[-1])
+print "TURNED Z IN DISC ON"
+D_p_lst,D_feat_p = discriminator(dparams, p_lst_x[-1], 1.0*p_lst_z[-1])
+D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], 1.0*q_lst_z[-1])
 
 closs,cacc = classifier(cparams,z_inf,x_in,true_y)
 
@@ -296,7 +269,9 @@ get_pchain = theano.function([z_in], outputs = p_lst_x_long)
 
 if skip_conn: 
     #reconstruct = theano.function([x_in], outputs = x_in +  z_to_x(gparams,x_to_z(gparams,x_in)))
-    reconstruct = theano.function([x_in], outputs = T.nnet.sigmoid(inverse_sigmoid(x_in) +  z_to_x(gparams,x_to_z(gparams,x_in))))
+    x_in_inv = inverse_sigmoid(x_in)
+    reconstruct = theano.function([x_in], outputs = T.nnet.sigmoid(x_in_inv +  z_to_x(gparams,x_to_z(gparams,x_in_inv))))
+
 else:
     reconstruct = theano.function([x_in], outputs = z_to_x(gparams,x_to_z(gparams,x_in)))
 
