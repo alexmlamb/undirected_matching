@@ -176,7 +176,7 @@ def p_chain(p, z, num_iterations):
 
     if num_iterations > 2 and skip_conn:
         print "skip connections"
-        eps = 0.1
+        eps = 0.9
         print "eps", eps
 
         xlst.append(z_to_x(p,z)*eps)
