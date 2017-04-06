@@ -64,6 +64,9 @@ print "skip conn", skip_conn
 latent_sparse = False
 print "latent sparse", latent_sparse
 
+persist_p_chain = True
+print "persistent p chain", persist_p_chain
+
 def init_gparams(p):
 
 
@@ -259,7 +262,7 @@ dgcupdates.update(gcupdates)
 
 train_disc_gen = theano.function([x_in,z_in],outputs=[dloss,p_lst_x[-1]],updates=dgupdates)
 
-train_disc_gen_classifier = theano.function(inputs = [x_in, z_in, true_y], outputs=[dloss,p_lst_x[-1],cacc], updates=dgcupdates)
+train_disc_gen_classifier = theano.function(inputs = [x_in, z_in, true_y], outputs=[dloss,p_lst_x[-1],cacc,p_lst_z[-1]], updates=dgcupdates)
 
 test_classifier = theano.function(inputs = [x_in, true_y], outputs=[cacc])
 get_zinf = theano.function([x_in], outputs=z_inf)
@@ -276,12 +279,21 @@ else:
     reconstruct = theano.function([x_in], outputs = z_to_x(gparams,x_to_z(gparams,x_in)))
 
 print "DOING INPAINTING"
+print "Blending param 0.1"
 
 if __name__ == '__main__':
 
+    z_out_p = rng.normal(size=(64,nl)).astype('float32')
+
     for iteration in range(0,500000):
 
-        z_in = rng.normal(size=(64,nl)).astype('float32')
+        if persist_p_chain:
+            z_in_new = rng.normal(size=(64,nl)).astype('float32')
+            blending = rng.binomial(n=1,p=0.5,size=(64,))
+            z_in_new[blending>=0.1] = z_out_p[blending>=0.1]
+            z_in = z_in_new
+        else:
+            z_in = rng.normal(size=(64,nl)).astype('float32')
 
         if latent_sparse:
             z_in[:,128:] *= 0.0
@@ -290,7 +302,7 @@ if __name__ == '__main__':
 
         x_in = trainx[r:r+64].reshape((64,784))
 
-        dloss,gen_x,acc = train_disc_gen_classifier(x_in,z_in, trainy[r:r+64].astype('int32'))
+        dloss,gen_x,acc,z_out_p = train_disc_gen_classifier(x_in,z_in, trainy[r:r+64].astype('int32'))
 
         if iteration % 1000 == 0:
             print iteration, "acc", acc
