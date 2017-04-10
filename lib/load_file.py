@@ -2,6 +2,8 @@ import glob
 from PIL import Image
 import numpy as np
 from viz import plot_images
+import os
+
 
 def normalize(x):
     return (x / 255.0)
@@ -19,11 +21,26 @@ class FileData:
         if loc[-1] != "/":
             loc += "/"
 
-        images = glob.glob(loc + "*")
+        #images = glob.glob(loc + "**")
+
+        images = []
+        dirs = os.walk(loc)
+
+        for dirp in dirs:
+            for fi in dirp[2]:
+                images.append(dirp[0] + "/" + fi)
+
+        images_taken = []
+
+        print "number of images total", len(images)
 
         for image in images:
-            assert "jpg" in image or "png" in image
+            if "jpg" in image or "png" in image:
+                images_taken.append(image)
 
+        images = images_taken
+
+        print "number of images taken", len(images_taken)
         self.numExamples = len(images)
         self.images = images
 
@@ -68,9 +85,11 @@ class FileData:
 if __name__ == "__main__":
 
     
-    loc = "/u/lambalex/DeepLearning/animefaces/faces/danbooru-faces/uniform/"
+    loc = "/u/lambalex/DeepLearning/animefaces/datafaces/danbooru-faces/"
 
     imageNetData = FileData(loc, 100, 36)
+
+    print "loaded"
 
     for i in range(0,1):
         x = imageNetData.getBatch()
