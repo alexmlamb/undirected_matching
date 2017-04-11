@@ -87,7 +87,7 @@ if __name__ == "__main__":
     
     loc = "/u/lambalex/DeepLearning/animefaces/datafaces/danbooru-faces/"
 
-    imageNetData = FileData(loc, 100, 36)
+    imageNetData = FileData(loc, 32, 64)
 
     print "loaded"
 
@@ -100,6 +100,5 @@ if __name__ == "__main__":
         print x.shape
 
         plot_images(normalize(x), "derp.png")
-
 
 

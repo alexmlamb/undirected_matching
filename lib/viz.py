@@ -115,6 +115,16 @@ def plot_images(X, fname, title=""):
     
     X = X.clip(0.0,1.0)
     
+    if X.shape == (64,784):
+        X = X.reshape((64,1,28,28))
+    elif X.shape == (64,100*100*3):
+        X = X.reshape((64,3,100,100))
+        X = X[:25]
+    elif X.shape == (64,32*32*3):
+        X = X.reshape((64,3,32,32))
+    else:
+        raise Exception("INVALID SHAPE OPTION")
+
     ## plot
     # move color to end
     Xcol = X.reshape((X.shape[0],-1,)).T
