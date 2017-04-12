@@ -43,6 +43,23 @@ def lsgan_loss(D_q_lst, D_p_lst):
     return dloss / len(D_q_lst), gloss / len(D_q_lst)
 
 
+def wgan_loss(D_q_lst, D_p_lst):
+    dloss = 0.0
+    gloss = 0.0
+
+    #for dloss, push up D_p and push down D_q
+    #for gloss, push up D_q and push down D_p
+
+    for i in range(len(D_q_lst)):
+        D_q = D_q_lst[i]
+        D_p = D_p_lst[i]
+        dloss += T.mean(D_q) + T.mean(-1.0 * D_p)
+        gloss += T.mean(D_p) + T.mean(-1.0 * D_q)
+
+    return dloss / len(D_q_lst), gloss / len(D_q_lst)
+    
+
+
 if __name__ == "__main__":
 
     p = T.matrix()

@@ -11,6 +11,8 @@ import sys
 sys.path.append("/u/lambalex/DeepLearning/undirected_matching")
 sys.path.append("/u/lambalex/DeepLearning/undirected_matching/lib")
 
+from straight_through import stochastic_bernoulli
+
 import theano
 import theano.tensor as T
 from nn_layers import fflayer, param_init_fflayer
@@ -77,24 +79,26 @@ print "skip conn", skip_conn
 latent_sparse = False
 print "latent sparse", latent_sparse
 
-persist_p_chain = True
+persist_p_chain = False
 print "persistent p chain", persist_p_chain
 
-blending_rate = 0.0
+blending_rate = 1.0
 print 'blending rate (odds of keeping old z in P chain)', blending_rate
+
+print "TRAINING RBM!"
 
 def init_gparams(p):
 
 
     p = param_init_fflayer(options={},params=p,prefix='z_x_1',nin=nl,nout=nfg,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='z_x_2',nin=nfg,nout=nfg,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='z_x_3',nin=nfg,nout=m,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='z_x_2',nin=nfg,nout=m,ortho=False,batch_norm=False)
+    #p = param_init_fflayer(options={},params=p,prefix='z_x_3',nin=nfg,nout=m,ortho=False,batch_norm=False)
 
     p = param_init_fflayer(options={},params=p,prefix='x_z_1',nin=m,nout=nfg,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='x_z_2',nin=nfg,nout=nfg,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='x_z_2',nin=nfg,nout=nl,ortho=False,batch_norm=False)
 
-    p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=nfg,nout=nl,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=nfg,nout=nl,ortho=False,batch_norm=False)
+    #p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=nfg,nout=nl,ortho=False,batch_norm=False)
+    #p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=nfg,nout=nl,ortho=False,batch_norm=False)
 
     return init_tparams(p)
 
@@ -115,30 +119,28 @@ def z_to_x(p,z):
     inp = z
 
     h1 = fflayer(tparams=p,state_below=inp,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
-    
 
-    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='z_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='z_x_2',activ='lambda x: x',batch_norm=False)
 
+    h2 = T.nnet.sigmoid(h2)
 
-    x = fflayer(tparams=p,state_below=h2,options={},prefix='z_x_3',activ='lambda x: x',batch_norm=False)
+    #x = fflayer(tparams=p,state_below=h2,options={},prefix='z_x_3',activ='lambda x: x',batch_norm=False)
 
-    return x
+    #h2 = stochastic_bernoulli(T.nnet.sigmoid(h2))
+
+    return h2
 
 def x_to_z(p,x):
 
-    h1 = fflayer(tparams=p,state_below=x,options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+    h1 = fflayer(tparams=p,state_below=x,options={},prefix='x_z_1',activ='lambda x: T.nnet.relu(x,alpha=0.02)',batch_norm=True)
 
-    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='x_z_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
-    sigma = fflayer(tparams=p,state_below=h2,options={},prefix='x_z_mu',activ='lambda x: x',batch_norm=False)
-    mu = fflayer(tparams=p,state_below=h2,options={},prefix='x_z_sigma',activ='lambda x: x',batch_norm=False)
+    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='x_z_2',activ='lambda x: x',batch_norm=False)
 
-    eps = srng.normal(size=sigma.shape)
+    h2 = T.nnet.sigmoid(h2)
 
-    z = eps*T.nnet.sigmoid(sigma) + mu
+    #h2 = stochastic_bernoulli(T.nnet.sigmoid(h2))
 
-    z = (z - T.mean(z, axis=0, keepdims=True)) / (0.001 + T.std(z, axis=0, keepdims=True))
-
-    return z
+    return h2
 
 def discriminator(p,x,z):
 
@@ -193,8 +195,6 @@ def p_chain(p, z, num_iterations):
         zlst.append(x_to_z(p,consider_constant(xlst[-1])))
         xlst.append(z_to_x(p,zlst[-1]))
 
-    for j in range(0,len(xlst)):
-        xlst[j] = T.nnet.sigmoid(xlst[j])
 
 
 
@@ -203,9 +203,7 @@ def p_chain(p, z, num_iterations):
 def q_chain(p,x):
 
     xlst = [x]
-    print "INVERSE SIGMOID IN Q CHAIN"
-    #INVERSE SIG TURNED OFF
-    zlst = [x_to_z(p,inverse_sigmoid(x))]
+    zlst = [x_to_z(p,x)]
 
     return xlst, zlst
 
@@ -258,28 +256,21 @@ get_dfeat = theano.function([x_in], outputs=D_feat_q)
 
 get_pchain = theano.function([z_in], outputs = p_lst_x_long)
 
-if skip_conn: 
-    #reconstruct = theano.function([x_in], outputs = x_in +  z_to_x(gparams,x_to_z(gparams,x_in)))
-    x_in_inv = inverse_sigmoid(x_in)
-    reconstruct = theano.function([x_in], outputs = T.nnet.sigmoid(x_in_inv +  z_to_x(gparams,x_to_z(gparams,x_in_inv))))
-
-else:
-    reconstruct = theano.function([x_in], outputs = z_to_x(gparams,x_to_z(gparams,x_in)))
 
 
 if __name__ == '__main__':
 
-    z_out_p = rng.normal(size=(64,nl)).astype('float32')
+    z_out_p = rng.binomial(n=1,p=0.5,size=(64,nl)).astype('float32')
 
     for iteration in range(0,500000):
 
         if persist_p_chain:
-            z_in_new = rng.normal(size=(64,nl)).astype('float32')
+            z_in_new = rng.binomial(n=1,p=0.5,size=(64,nl)).astype('float32')
             blending = rng.uniform(0.0,1.0,size=(64,))
             z_in_new[blending>=blending_rate] = z_out_p[blending>=blending_rate]
             z_in = z_in_new
         else:
-            z_in = rng.normal(size=(64,nl)).astype('float32')
+            z_in = rng.binomial(n=1,p=0.5,size=(64,nl)).astype('float32')
 
         if latent_sparse:
             z_in[:,128:] *= 0.0

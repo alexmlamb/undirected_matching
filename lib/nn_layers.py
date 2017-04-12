@@ -1,5 +1,6 @@
 import theano
 from theano import tensor
+import theano.tensor as T
 import numpy
 from utils import ortho_weight , norm_weight, init_tparams #uniform_weight
 

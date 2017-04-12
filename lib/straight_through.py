@@ -80,4 +80,6 @@ r = f(x)
 print r[0]
 print "grad", r[1]
 
+r = f(x)
 
+print r[0]
