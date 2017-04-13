@@ -69,6 +69,9 @@ def dropout_layer(state_before, use_noise, trng):
 def join2(a,b):
     return tensor.concatenate([a,b],axis=1)
 
+def join3(a,b,c):
+    return tensor.concatenate([a,b,c],axis=1)
+
 # initialize Theano shared variables according to the initial parameters
 def init_tparams(params):
     tparams = OrderedDict()

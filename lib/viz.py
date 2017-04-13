@@ -117,8 +117,8 @@ def plot_images(X, fname, title=""):
     
     if X.shape == (64,784):
         X = X.reshape((64,1,28,28))
-    elif X.shape == (64,100*100*3):
-        X = X.reshape((64,3,100,100))
+    elif X.shape == (64,96*96*3):
+        X = X.reshape((64,3,96,96))
         X = X[:25]
     elif X.shape == (64,32*32*3):
         X = X.reshape((64,3,32,32))

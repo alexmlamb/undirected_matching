@@ -13,9 +13,9 @@ sys.path.append("/u/lambalex/DeepLearning/undirected_matching/lib")
 
 import theano
 import theano.tensor as T
-from nn_layers import fflayer, param_init_fflayer
-from utils import init_tparams, join2, srng, dropout, inverse_sigmoid
-from loss import accuracy, crossent, lsgan_loss, wgan_loss, wgan_penalty
+from nn_layers import fflayer, param_init_fflayer, param_init_convlayer, convlayer
+from utils import init_tparams, join2, srng, dropout, inverse_sigmoid, join3
+from loss import accuracy, crossent, lsgan_loss, wgan_loss
 import lasagne
 import numpy as np
 import numpy.random as rng
@@ -36,8 +36,8 @@ class ConsiderConstant(theano.compile.ViewOp):
 
 consider_constant = ConsiderConstant()
 
-dataset = "mnist"
-#dataset = "anime"
+#dataset = "mnist"
+dataset = "anime"
 
 
 if dataset == "mnist":
@@ -55,17 +55,17 @@ elif dataset == "anime":
 
     loc = "/u/lambalex/DeepLearning/animefaces/datafaces/danbooru-faces/"
 
-    animeData = FileData(loc, 32, 64)
+    animeData = FileData(loc, 96, 64)
 
-    m = 32*32*3
+    m = 96*96*3
 
 nl = 128
 #128 works for nl
-nfg = 1024
-nfd = 1024
+nfg = 512
+nfd = 512
 
 #3
-num_steps = 1
+num_steps = 3
 print "num steps", num_steps
 
 train_classifier_separate = True
@@ -77,7 +77,7 @@ print "skip conn", skip_conn
 latent_sparse = False
 print "latent sparse", latent_sparse
 
-persist_p_chain = True
+persist_p_chain = False
 print "persistent p chain", persist_p_chain
 
 blending_rate = 0.0
@@ -85,22 +85,37 @@ print 'blending rate (odds of keeping old z in P chain)', blending_rate
 
 def init_gparams(p):
 
+    p = param_init_fflayer(options={},params=p,prefix='z_x_1',nin=nl,nout=256*6*6,ortho=False,batch_norm=False)
+    #p = param_init_fflayer(options={},params=p,prefix='z_x_2',nin=nfg,nout=nfg,ortho=False,batch_norm=False)
+    #p = param_init_fflayer(options={},params=p,prefix='z_x_3',nin=nfg,nout=m,ortho=False,batch_norm=False)
 
-    p = param_init_fflayer(options={},params=p,prefix='z_x_1',nin=nl,nout=nfg,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='z_x_2',nin=nfg,nout=nfg,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='z_x_3',nin=nfg,nout=m,ortho=False,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='z_x_2',nin=256,nout=256,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='z_x_3',nin=256,nout=128,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='z_x_4',nin=128,nout=64,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='z_x_5',nin=64,nout=3,kernel_len=5,batch_norm=False)
 
-    p = param_init_fflayer(options={},params=p,prefix='x_z_1',nin=m,nout=nfg,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='x_z_2',nin=nfg,nout=nfg,ortho=False,batch_norm=False)
+    #p = param_init_fflayer(options={},params=p,prefix='x_z_1',nin=m,nout=nfg,ortho=False,batch_norm=False)
+    #p = param_init_fflayer(options={},params=p,prefix='x_z_2',nin=nfg,nout=nfg,ortho=False,batch_norm=False)
+    
 
-    p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=nfg,nout=nl,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=nfg,nout=nl,ortho=False,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_1',nin=3,nout=64,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_2',nin=64,nout=128,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_3',nin=128,nout=256,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_4',nin=256,nout=256,kernel_len=5,batch_norm=False)
+
+    p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=256*6*6,nout=nl,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=256*6*6,nout=nl,ortho=False,batch_norm=False)
 
     return init_tparams(p)
 
 def init_dparams(p):
 
-    p = param_init_fflayer(options={},params=p,prefix='D_1',nin=m+nl,nout=nfd,ortho=False,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='DC_1',nin=3,nout=64,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='DC_2',nin=64,nout=128,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='DC_3',nin=128,nout=256,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='DC_4',nin=256,nout=256,kernel_len=5,batch_norm=False)
+
+    p = param_init_fflayer(options={},params=p,prefix='D_1',nin=m+nl+256*6*6,nout=nfd,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='D_2',nin=nfd,nout=nfd,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='D_3',nin=nfd,nout=nfd,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='D_o_1',nin=nfd,nout=1,ortho=False,batch_norm=False)
@@ -114,23 +129,51 @@ def z_to_x(p,z):
 
     inp = z
 
-    h1 = fflayer(tparams=p,state_below=inp,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
-    
+    h0 = fflayer(tparams=p,state_below=inp,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+    #256 x 6 x 6
 
-    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='z_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+    h0 = h0.reshape((64,256,6,6))
+
+    h1 = convlayer(tparams=p,state_below=h0,options={},prefix='z_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=-2)
+    #256 x 12 x 12
+
+    h2 = convlayer(tparams=p,state_below=h1,options={},prefix='z_x_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=-2)
+    #256 x 24 x 24
+
+    h3 = convlayer(tparams=p,state_below=h2,options={},prefix='z_x_4',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=-2)
+    #128 x 48 x 48
+
+    x = convlayer(tparams=p,state_below=h3,options={},prefix='z_x_5',activ='lambda x: x',batch_norm=False,stride=-2)
+    #3 x 96 x 96
+
+    #h2 = fflayer(tparams=p,state_below=h1,options={},prefix='z_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
 
 
-    x = fflayer(tparams=p,state_below=h2,options={},prefix='z_x_3',activ='lambda x: x',batch_norm=False)
+    #x = fflayer(tparams=p,state_below=h2,options={},prefix='z_x_3',activ='lambda x: x',batch_norm=False)
 
-    return x
+    return x.flatten(2)
 
 def x_to_z(p,x):
 
-    h1 = fflayer(tparams=p,state_below=x,options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+    #h1 = fflayer(tparams=p,state_below=x,options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+    #h2 = fflayer(tparams=p,state_below=h1,options={},prefix='x_z_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
 
-    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='x_z_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
-    sigma = fflayer(tparams=p,state_below=h2,options={},prefix='x_z_mu',activ='lambda x: x',batch_norm=False)
-    mu = fflayer(tparams=p,state_below=h2,options={},prefix='x_z_sigma',activ='lambda x: x',batch_norm=False)
+    h1 = convlayer(tparams=p,state_below=x.reshape((64,3,96,96)),options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
+    #48,48
+
+    h2 = convlayer(tparams=p,state_below=h1,options={},prefix='x_z_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
+    #24,24
+
+    h3 = convlayer(tparams=p,state_below=h2,options={},prefix='x_z_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
+    #12,12
+
+    h4 = convlayer(tparams=p,state_below=h3,options={},prefix='x_z_4',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
+
+    ho = h4
+    ho = ho.flatten(2)
+
+    sigma = fflayer(tparams=p,state_below=ho,options={},prefix='x_z_mu',activ='lambda x: x',batch_norm=False)
+    mu = fflayer(tparams=p,state_below=ho,options={},prefix='x_z_sigma',activ='lambda x: x',batch_norm=False)
 
     eps = srng.normal(size=sigma.shape)
 
@@ -142,7 +185,18 @@ def x_to_z(p,x):
 
 def discriminator(p,x,z):
 
-    inp = join2(x,z)
+    dc_1 = convlayer(tparams=p,state_below=x.reshape((64,3,96,96)),options={},prefix='DC_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
+    #48,48
+    
+    dc_2 = convlayer(tparams=p,state_below=dc_1,options={},prefix='DC_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
+    #24,24
+
+    dc_3 = convlayer(tparams=p,state_below=dc_2,options={},prefix='DC_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
+    #12,12
+
+    dc_4 = convlayer(tparams=p,state_below=dc_3,options={},prefix='DC_4',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
+
+    inp = join3(x,z,dc_4.flatten(2))
 
     h1 = fflayer(tparams=p,state_below=inp,options={},prefix='D_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',mean_ln=False)
 
@@ -233,21 +287,7 @@ print "TURNED Z IN DISC ON"
 D_p_lst,D_feat_p = discriminator(dparams, p_lst_x[-1], 1.0*p_lst_z[-1])
 D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], 1.0*q_lst_z[-1])
 
-eps = srng.uniform(0,1,size=(64,))
-x_interp = eps*p_lst_x[-1] + (1-eps)*q_lst_x[-1]
-z_interp = eps*p_lst_z[-1] + (1-eps)*q_lst_z[-1]
-D_interp_lst,D_feat_interp = discriminator(dparams, x_interp, z_interp)
-
 dloss, gloss = lsgan_loss(D_q_lst, D_p_lst)
-
-#dloss, gloss = wgan_loss(D_q_lst, D_p_lst)
-
-dloss += wgan_penalty(D_interp_lst, x_interp, z_interp)
-
-#dloss += 10.0 * T.sqrt(T.sum(T.sqr(T.grad(T.mean(D_q_lst[-1]), q_lst_x[-1]))))
-#dloss += 10.0 * T.sqrt(T.sum(T.sqr(T.grad(T.mean(D_p_lst[-1]), p_lst_x[-1]))))
-#dloss += 10.0 * T.sqrt(T.sum(T.sqr(T.grad(T.mean(D_q_lst[-1]), q_lst_z[-1]))))
-#dloss += 10.0 * T.sqrt(T.sum(T.sqr(T.grad(T.mean(D_p_lst[-1]), p_lst_z[-1]))))
 
 dupdates = lasagne.updates.rmsprop(dloss, dparams.values(),0.0001)
 gloss_grads = T.grad(gloss, gparams.values(), disconnected_inputs='ignore')
@@ -301,7 +341,7 @@ if __name__ == '__main__':
         if dataset == "mnist":
             x_in = trainx[r:r+64].reshape((64,784))
         elif dataset == "anime":
-            x_in = normalize(animeData.getBatch()).reshape((64,32*32*3))
+            x_in = normalize(animeData.getBatch()).reshape((64,96*96*3))
 
         dloss,gen_x,z_out_p = train_disc_gen_classifier(x_in,z_in)
 
