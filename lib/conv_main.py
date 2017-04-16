@@ -55,11 +55,11 @@ elif dataset == "anime":
 
     loc = "/u/lambalex/DeepLearning/animefaces/datafaces/danbooru-faces/"
 
-    animeData = FileData(loc, 96, 64)
+    animeData = FileData(loc, 32, 64)
 
-    m = 96*96*3
+    m = 32*32*3
 
-nl = 128
+nl = 512
 #128 works for nl
 nfg = 512
 nfd = 512
@@ -74,37 +74,29 @@ print "train classifier separate", train_classifier_separate
 skip_conn = True
 print "skip conn", skip_conn
 
-latent_sparse = False
+latent_sparse = True
 print "latent sparse", latent_sparse
 
 persist_p_chain = False
 print "persistent p chain", persist_p_chain
 
-blending_rate = 0.0
+blending_rate = 0.5
 print 'blending rate (odds of keeping old z in P chain)', blending_rate
 
 def init_gparams(p):
 
-    p = param_init_fflayer(options={},params=p,prefix='z_x_1',nin=nl,nout=256*6*6,ortho=False,batch_norm=False)
-    #p = param_init_fflayer(options={},params=p,prefix='z_x_2',nin=nfg,nout=nfg,ortho=False,batch_norm=False)
-    #p = param_init_fflayer(options={},params=p,prefix='z_x_3',nin=nfg,nout=m,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='z_x_1',nin=nl,nout=512*4*4,ortho=False,batch_norm=False)
 
-    p = param_init_convlayer(options={},params=p,prefix='z_x_2',nin=256,nout=256,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='z_x_2',nin=512,nout=256,kernel_len=5,batch_norm=False)
     p = param_init_convlayer(options={},params=p,prefix='z_x_3',nin=256,nout=128,kernel_len=5,batch_norm=False)
-    p = param_init_convlayer(options={},params=p,prefix='z_x_4',nin=128,nout=64,kernel_len=5,batch_norm=False)
-    p = param_init_convlayer(options={},params=p,prefix='z_x_5',nin=64,nout=3,kernel_len=5,batch_norm=False)
-
-    #p = param_init_fflayer(options={},params=p,prefix='x_z_1',nin=m,nout=nfg,ortho=False,batch_norm=False)
-    #p = param_init_fflayer(options={},params=p,prefix='x_z_2',nin=nfg,nout=nfg,ortho=False,batch_norm=False)
-    
+    p = param_init_convlayer(options={},params=p,prefix='z_x_4',nin=128,nout=3,kernel_len=5,batch_norm=False)
 
     p = param_init_convlayer(options={},params=p,prefix='x_z_1',nin=3,nout=64,kernel_len=5,batch_norm=False)
     p = param_init_convlayer(options={},params=p,prefix='x_z_2',nin=64,nout=128,kernel_len=5,batch_norm=False)
     p = param_init_convlayer(options={},params=p,prefix='x_z_3',nin=128,nout=256,kernel_len=5,batch_norm=False)
-    p = param_init_convlayer(options={},params=p,prefix='x_z_4',nin=256,nout=256,kernel_len=5,batch_norm=False)
 
-    p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=256*6*6,nout=nl,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=256*6*6,nout=nl,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=256*4*4,nout=nl,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=256*4*4,nout=nl,ortho=False,batch_norm=False)
 
     return init_tparams(p)
 
@@ -113,14 +105,17 @@ def init_dparams(p):
     p = param_init_convlayer(options={},params=p,prefix='DC_1',nin=3,nout=64,kernel_len=5,batch_norm=False)
     p = param_init_convlayer(options={},params=p,prefix='DC_2',nin=64,nout=128,kernel_len=5,batch_norm=False)
     p = param_init_convlayer(options={},params=p,prefix='DC_3',nin=128,nout=256,kernel_len=5,batch_norm=False)
-    p = param_init_convlayer(options={},params=p,prefix='DC_4',nin=256,nout=256,kernel_len=5,batch_norm=False)
 
-    p = param_init_fflayer(options={},params=p,prefix='D_1',nin=m+nl+256*6*6,nout=nfd,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='D_1',nin=nl+256*4*4,nout=nfd,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='D_2',nin=nfd,nout=nfd,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='D_3',nin=nfd,nout=nfd,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='D_o_1',nin=nfd,nout=1,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='D_o_2',nin=nfd,nout=1,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='D_o_3',nin=nfd,nout=1,ortho=False,batch_norm=False)
+
+    p = param_init_fflayer(options={},params=p,prefix='D_o_4',nin=16*16*64,nout=1,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='D_o_5',nin=8*8*128,nout=1,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='D_o_6',nin=4*4*256,nout=1,ortho=False,batch_norm=False)
 
     return init_tparams(p)
 
@@ -132,18 +127,14 @@ def z_to_x(p,z):
     h0 = fflayer(tparams=p,state_below=inp,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
     #256 x 6 x 6
 
-    h0 = h0.reshape((64,256,6,6))
+    h0 = h0.reshape((64,512,4,4))
 
     h1 = convlayer(tparams=p,state_below=h0,options={},prefix='z_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=-2)
-    #256 x 12 x 12
 
     h2 = convlayer(tparams=p,state_below=h1,options={},prefix='z_x_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=-2)
-    #256 x 24 x 24
 
-    h3 = convlayer(tparams=p,state_below=h2,options={},prefix='z_x_4',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=-2)
-    #128 x 48 x 48
 
-    x = convlayer(tparams=p,state_below=h3,options={},prefix='z_x_5',activ='lambda x: x',batch_norm=False,stride=-2)
+    x = convlayer(tparams=p,state_below=h2,options={},prefix='z_x_4',activ='lambda x: x',batch_norm=False,stride=-2)
     #3 x 96 x 96
 
     #h2 = fflayer(tparams=p,state_below=h1,options={},prefix='z_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
@@ -158,7 +149,7 @@ def x_to_z(p,x):
     #h1 = fflayer(tparams=p,state_below=x,options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
     #h2 = fflayer(tparams=p,state_below=h1,options={},prefix='x_z_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
 
-    h1 = convlayer(tparams=p,state_below=x.reshape((64,3,96,96)),options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
+    h1 = convlayer(tparams=p,state_below=x.reshape((64,3,32,32)),options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
     #48,48
 
     h2 = convlayer(tparams=p,state_below=h1,options={},prefix='x_z_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
@@ -167,9 +158,8 @@ def x_to_z(p,x):
     h3 = convlayer(tparams=p,state_below=h2,options={},prefix='x_z_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
     #12,12
 
-    h4 = convlayer(tparams=p,state_below=h3,options={},prefix='x_z_4',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
 
-    ho = h4
+    ho = h3
     ho = ho.flatten(2)
 
     sigma = fflayer(tparams=p,state_below=ho,options={},prefix='x_z_mu',activ='lambda x: x',batch_norm=False)
@@ -185,18 +175,13 @@ def x_to_z(p,x):
 
 def discriminator(p,x,z):
 
-    dc_1 = convlayer(tparams=p,state_below=x.reshape((64,3,96,96)),options={},prefix='DC_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
-    #48,48
-    
-    dc_2 = convlayer(tparams=p,state_below=dc_1,options={},prefix='DC_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
-    #24,24
+    dc_1 = convlayer(tparams=p,state_below=x.reshape((64,3,32,32)),options={},prefix='DC_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=False,stride=2)
 
-    dc_3 = convlayer(tparams=p,state_below=dc_2,options={},prefix='DC_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
-    #12,12
+    dc_2 = convlayer(tparams=p,state_below=dc_1,options={},prefix='DC_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=False,stride=2)
 
-    dc_4 = convlayer(tparams=p,state_below=dc_3,options={},prefix='DC_4',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
+    dc_3 = convlayer(tparams=p,state_below=dc_2,options={},prefix='DC_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=False,stride=2)
 
-    inp = join3(x,z,dc_4.flatten(2))
+    inp = join2(z,dc_3.flatten(2))
 
     h1 = fflayer(tparams=p,state_below=inp,options={},prefix='D_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',mean_ln=False)
 
@@ -208,7 +193,11 @@ def discriminator(p,x,z):
     D2 = fflayer(tparams=p,state_below=h2,options={},prefix='D_o_2',activ='lambda x: x',batch_norm=False)
     D3 = fflayer(tparams=p,state_below=h3,options={},prefix='D_o_3',activ='lambda x: x',batch_norm=False)
 
-    return [D1,D2,D3], h3
+    D4 = fflayer(tparams=p,state_below=dc_1.flatten(2),options={},prefix='D_o_4',activ='lambda x: x',batch_norm=False)
+    D5 = fflayer(tparams=p,state_below=dc_2.flatten(2),options={},prefix='D_o_5',activ='lambda x: x',batch_norm=False)
+    D6 = fflayer(tparams=p,state_below=dc_3.flatten(2),options={},prefix='D_o_6',activ='lambda x: x',batch_norm=False)
+
+    return [D1*0.0,D2*0.0,D3*0.0,D4,D5,D6], h3
 
 def p_chain(p, z, num_iterations):
     zlst = [z]
@@ -341,7 +330,7 @@ if __name__ == '__main__':
         if dataset == "mnist":
             x_in = trainx[r:r+64].reshape((64,784))
         elif dataset == "anime":
-            x_in = normalize(animeData.getBatch()).reshape((64,96*96*3))
+            x_in = normalize(animeData.getBatch()).reshape((64,32*32*3))
 
         dloss,gen_x,z_out_p = train_disc_gen_classifier(x_in,z_in)
 
