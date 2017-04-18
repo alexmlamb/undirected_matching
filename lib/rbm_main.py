@@ -67,7 +67,7 @@ nfg = 1024
 nfd = 1024
 
 #3
-num_steps = 3
+num_steps = 1
 print "num steps", num_steps
 
 train_classifier_separate = True
@@ -82,7 +82,7 @@ print "latent sparse", latent_sparse
 persist_p_chain = False
 print "persistent p chain", persist_p_chain
 
-blending_rate = 1.0
+blending_rate = 0.5
 print 'blending rate (odds of keeping old z in P chain)', blending_rate
 
 print "TRAINING RBM!"
@@ -118,7 +118,9 @@ def z_to_x(p,z):
 
     inp = z
 
-    h1 = fflayer(tparams=p,state_below=inp,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+    h1 = fflayer(tparams=p,state_below=inp,options={},prefix='z_x_1',activ='lambda x: x',batch_norm=True)
+
+    h1 = stochastic_bernoulli(T.nnet.sigmoid(h1))
 
     h2 = fflayer(tparams=p,state_below=h1,options={},prefix='z_x_2',activ='lambda x: x',batch_norm=False)
 
@@ -126,7 +128,7 @@ def z_to_x(p,z):
 
     #x = fflayer(tparams=p,state_below=h2,options={},prefix='z_x_3',activ='lambda x: x',batch_norm=False)
 
-    #h2 = stochastic_bernoulli(T.nnet.sigmoid(h2))
+    h2 = stochastic_bernoulli(h2)
 
     return h2
 
@@ -279,6 +281,7 @@ if __name__ == '__main__':
         
         if dataset == "mnist":
             x_in = trainx[r:r+64].reshape((64,784))
+            x_in = x_in.round(0)
         elif dataset == "anime":
             x_in = normalize(animeData.getBatch()).reshape((64,32*32*3))
 

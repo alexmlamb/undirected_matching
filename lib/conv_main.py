@@ -37,8 +37,8 @@ class ConsiderConstant(theano.compile.ViewOp):
 consider_constant = ConsiderConstant()
 
 #dataset = "mnist"
-dataset = "anime"
-
+#dataset = "anime"
+dataset = "svhn"
 
 if dataset == "mnist":
     mn = gzip.open("/u/lambalex/data/mnist/mnist.pkl.gz")
@@ -59,10 +59,19 @@ elif dataset == "anime":
 
     m = 32*32*3
 
+elif dataset == "svhn":
+
+    from load_svhn import SvhnData
+    from load_file import normalize, denormalize
+
+    svhnData = SvhnData(mb_size=64,segment="train")
+
 nl = 512
 #128 works for nl
 nfg = 512
 nfd = 512
+
+print "dataset", dataset
 
 #3
 num_steps = 3
@@ -150,13 +159,10 @@ def x_to_z(p,x):
     #h2 = fflayer(tparams=p,state_below=h1,options={},prefix='x_z_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
 
     h1 = convlayer(tparams=p,state_below=x.reshape((64,3,32,32)),options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
-    #48,48
 
     h2 = convlayer(tparams=p,state_below=h1,options={},prefix='x_z_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
-    #24,24
 
     h3 = convlayer(tparams=p,state_below=h2,options={},prefix='x_z_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=2)
-    #12,12
 
 
     ho = h3
@@ -197,7 +203,7 @@ def discriminator(p,x,z):
     D5 = fflayer(tparams=p,state_below=dc_2.flatten(2),options={},prefix='D_o_5',activ='lambda x: x',batch_norm=False)
     D6 = fflayer(tparams=p,state_below=dc_3.flatten(2),options={},prefix='D_o_6',activ='lambda x: x',batch_norm=False)
 
-    return [D1*0.0,D2*0.0,D3*0.0,D4,D5,D6], h3
+    return [D1,D2,D3,D4,D5,D6], h3
 
 def p_chain(p, z, num_iterations):
     zlst = [z]
@@ -222,8 +228,8 @@ def p_chain(p, z, num_iterations):
         for inds in range(0,num_iterations-2):
             zlst.append(x_to_z(p,xlst[-1]))
             xlst.append(z_to_x(p,zlst[-1]) * (eps) + (1-eps)* xlst[-1])
-        zlst.append(x_to_z(p,consider_constant(xlst[-1])))
-        xlst.append(z_to_x(p,zlst[-1]) * (eps) + (1-eps)*consider_constant(xlst[-1]))
+        zlst.append(x_to_z(p,xlst[-1]))
+        xlst.append(z_to_x(p,zlst[-1]) * (eps) + (1-eps)*xlst[-1])
 
 
     if num_iterations > 2 and (not skip_conn):
@@ -328,9 +334,19 @@ if __name__ == '__main__':
         r = random.randint(0,50000-64)
         
         if dataset == "mnist":
-            x_in = trainx[r:r+64].reshape((64,784))
+            x_in = trainx[r:r+64]
+
+            x_in = x_in.reshape((64,1,28,28))
+
+            x_in = np.repeat(x_in,3,axis=(1))
+            x_in = np.lib.pad(x_in,((0,0),(0,0),(2,2),(2,2)),'constant',constant_values=(0))
+
+            x_in = x_in.reshape((64,32*32*3))
         elif dataset == "anime":
             x_in = normalize(animeData.getBatch()).reshape((64,32*32*3))
+
+        elif dataset == "svhn":
+            x_in = normalize(svhnData.getBatch()['x']).reshape((64,32*32*3))
 
         dloss,gen_x,z_out_p = train_disc_gen_classifier(x_in,z_in)
 

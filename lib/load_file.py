@@ -6,7 +6,7 @@ import os
 
 
 def normalize(x):
-    return (x / 255.0)
+    return (x / 255.0).astype('float32')
 
 def denormalize(x):
     return (x) * 255.0
@@ -100,4 +100,7 @@ if __name__ == "__main__":
         print x.shape
 
         plot_images(normalize(x).reshape((64,64*64*3)), "derp.png")
+
+
+
 
