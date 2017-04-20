@@ -16,7 +16,7 @@ from straight_through import stochastic_bernoulli
 import theano
 import theano.tensor as T
 from nn_layers import fflayer, param_init_fflayer
-from utils import init_tparams, join2, srng, dropout, inverse_sigmoid
+from utils import init_tparams, join2, srng, dropout, inverse_sigmoid, l2_norm
 from loss import accuracy, crossent, lsgan_loss
 import lasagne
 import numpy as np
@@ -67,7 +67,7 @@ nfg = 1024
 nfd = 1024
 
 #3
-num_steps = 1
+num_steps = 3
 print "num steps", num_steps
 
 train_classifier_separate = True
@@ -115,12 +115,12 @@ def init_dparams(p):
 
 
 def z_to_x(p,z):
-
+    
     inp = z
 
     h1 = fflayer(tparams=p,state_below=inp,options={},prefix='z_x_1',activ='lambda x: x',batch_norm=True)
 
-    h1 = stochastic_bernoulli(T.nnet.sigmoid(h1))
+    h1 = T.nnet.sigmoid(h1)
 
     h2 = fflayer(tparams=p,state_below=h1,options={},prefix='z_x_2',activ='lambda x: x',batch_norm=False)
 
@@ -128,7 +128,7 @@ def z_to_x(p,z):
 
     #x = fflayer(tparams=p,state_below=h2,options={},prefix='z_x_3',activ='lambda x: x',batch_norm=False)
 
-    h2 = stochastic_bernoulli(h2)
+    #h2 = stochastic_bernoulli(h2)
 
     return h2
 
@@ -236,6 +236,8 @@ D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], 1.0*q_lst_z[-1])
 
 dloss, gloss = lsgan_loss(D_q_lst, D_p_lst)
 
+dloss += 10.0 * (1.0 - l2_norm(T.grad(T.mean(D_p_lst[-1]), p_lst_x[-1])))**2
+dloss += 10.0 * (1.0 - l2_norm(T.grad(T.mean(D_q_lst[-1]), q_lst_x[-1])))**2
 
 dupdates = lasagne.updates.rmsprop(dloss, dparams.values(),0.0001)
 gloss_grads = T.grad(gloss, gparams.values(), disconnected_inputs='ignore')

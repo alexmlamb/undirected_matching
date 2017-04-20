@@ -1,5 +1,6 @@
 import theano
 from theano import tensor
+import theano.tensor as T
 import warnings
 import six
 import pickle
@@ -71,6 +72,9 @@ def join2(a,b):
 
 def join3(a,b,c):
     return tensor.concatenate([a,b,c],axis=1)
+
+def l2_norm(a):
+    return T.sqrt(T.sum(T.sqr(a)))
 
 # initialize Theano shared variables according to the initial parameters
 def init_tparams(params):

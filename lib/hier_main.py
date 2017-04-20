@@ -36,9 +36,9 @@ class ConsiderConstant(theano.compile.ViewOp):
 
 consider_constant = ConsiderConstant()
 
-#dataset = "mnist"
+dataset = "mnist"
 #dataset = "anime"
-dataset = "svhn"
+#dataset = "svhn"
 
 if dataset == "mnist":
     mn = gzip.open("/u/lambalex/data/mnist/mnist.pkl.gz")
@@ -151,7 +151,7 @@ def transition(p,z,x):
 
     z_new = (z_new - T.mean(z_new, axis=0, keepdims=True)) / (0.001 + T.std(z_new, axis=0, keepdims=True))
 
-    z_inp = join2(z, z_new*0.0 + srng.normal(size=z_new.shape))
+    z_inp = join2(z, z_new)
 
     d0 = fflayer(tparams=p,state_below=z_inp,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
 
@@ -159,7 +159,11 @@ def transition(p,z,x):
 
     d1 = convlayer(tparams=p,state_below=d0,options={},prefix='z_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=-2)
 
+    #d1 = join2(d1, e2)
+
     d2 = convlayer(tparams=p,state_below=d1,options={},prefix='z_x_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True,stride=-2)
+
+    #d2 = join2(d2, e1)
 
     x_new = convlayer(tparams=p,state_below=d2,options={},prefix='z_x_4',activ='lambda x: x',batch_norm=False,stride=-2).flatten(2)
 
@@ -198,7 +202,6 @@ def p_chain(p, z, x, num_iterations):
     for inds in range(0,num_iterations-1):
 
         new_z, new_x = transition(p, zlst[-1], consider_constant(xlst[-1]))
-
 
         zlst.append(new_z)
         xlst.append(new_x)
@@ -245,12 +248,12 @@ print q_lst_z
 #TODO: turned off z in discriminator!  Sanity check!  
 print "TURNED Z IN DISC ON"
 D_p_lst_1,D_feat_p_1 = discriminator(dparams, p_lst_x[-1], p_lst_z[-1])
-#D_p_lst_2,D_feat_p_2 = discriminator(dparams, p_lst_x[-2], p_lst_z[-2])
+D_p_lst_2,D_feat_p_2 = discriminator(dparams, p_lst_x[-2], p_lst_z[-2])
 #D_p_lst_3,D_feat_p_3 = discriminator(dparams, p_lst_x[-3], p_lst_z[-3])
 
 print "ONLY FEEDING LAST 2 levels TO D"
 
-D_p_lst = D_p_lst_1# + D_p_lst_2# + D_p_lst_3
+D_p_lst = D_p_lst_1 + D_p_lst_2# + D_p_lst_3
 
 D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
 
