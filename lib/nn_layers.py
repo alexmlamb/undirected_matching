@@ -71,11 +71,24 @@ def param_init_convlayer(options,params,prefix='ff',nin=None,nout=None,kernel_le
     params[prefix+"_W"] = 0.01 * rng.normal(size=(nout,nin,kernel_len,kernel_len)).astype('float32')
     params[prefix+"_b"] = np.zeros(shape=(nout,)).astype('float32')
 
+    if batch_norm:
+        params[prefix+"_newmu"] = np.zeros(shape=(nout,)).astype('float32')
+        params[prefix+"_newsigma"] = np.ones(shape=(nout,)).astype('float32')
+
     return params
 
-def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor.tanh(x)',batch_norm=False,stride=None):
+def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor.tanh(x)',stride=None):
 
-    padsize = 2
+    print "kernel shape", tparams[prefix+"_W"].get_value().shape[2]
+
+    kernel_shape = tparams[prefix+"_W"].get_value().shape[2]
+
+    if kernel_shape == 5:
+        padsize = 2
+    elif kernel_shape == 1:
+        padsize = 0
+    else:
+        raise Exception(kernel_shape)
 
     if stride == -2:
         conv_out = deconv(state_below,tparams[prefix+'_W'].transpose(1,0,2,3),subsample=(2,2), border_mode=(2,2))
@@ -84,8 +97,16 @@ def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor
 
     conv_out = conv_out + tparams[prefix+'_b'].dimshuffle('x', 0, 'x', 'x')
 
+    if prefix+"_newmu" in tparams:
+        batch_norm = True
+        print "using batch norm for prefix", prefix
+    else:
+        batch_norm = False
+
     if batch_norm:
         conv_out = (conv_out - T.mean(conv_out, axis=(0,2,3), keepdims=True)) / (0.01 + T.std(conv_out, axis=(0,2,3), keepdims=True))
+
+        conv_out = conv_out*tparams[prefix+'_newsigma'].dimshuffle('x',0,'x','x') + tparams[prefix+'_newmu'].dimshuffle('x',0,'x','x')
 
     conv_out = eval(activ)(conv_out)
 
