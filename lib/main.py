@@ -15,7 +15,7 @@ import theano
 import theano.tensor as T
 from nn_layers import fflayer, param_init_fflayer
 from utils import init_tparams, join2, srng, dropout, inverse_sigmoid
-from loss import accuracy, crossent, lsgan_loss, wgan_loss, wgan_penalty
+from loss import accuracy, crossent, lsgan_loss
 import lasagne
 import numpy as np
 import numpy.random as rng
@@ -65,7 +65,7 @@ nfg = 1024
 nfd = 1024
 
 #3
-num_steps = 1
+num_steps = 3
 print "num steps", num_steps
 
 train_classifier_separate = True
@@ -233,16 +233,10 @@ print "TURNED Z IN DISC ON"
 D_p_lst,D_feat_p = discriminator(dparams, p_lst_x[-1], 1.0*p_lst_z[-1])
 D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], 1.0*q_lst_z[-1])
 
-eps = srng.uniform(0,1,size=(64,))
-x_interp = eps*p_lst_x[-1] + (1-eps)*q_lst_x[-1]
-z_interp = eps*p_lst_z[-1] + (1-eps)*q_lst_z[-1]
-D_interp_lst,D_feat_interp = discriminator(dparams, x_interp, z_interp)
 
 dloss, gloss = lsgan_loss(D_q_lst, D_p_lst)
 
-#dloss, gloss = wgan_loss(D_q_lst, D_p_lst)
 
-dloss += wgan_penalty(D_interp_lst, x_interp, z_interp)
 
 #dloss += 10.0 * T.sqrt(T.sum(T.sqr(T.grad(T.mean(D_q_lst[-1]), q_lst_x[-1]))))
 #dloss += 10.0 * T.sqrt(T.sum(T.sqr(T.grad(T.mean(D_p_lst[-1]), p_lst_x[-1]))))

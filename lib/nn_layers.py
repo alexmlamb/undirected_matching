@@ -122,32 +122,46 @@ def param_init_fflayer(options,
                        ortho=True,
                        batch_norm=False):
 
+    if batch_norm:
+        params[prefix + '_newmu'] = np.zeros(shape=(nout,)).astype('float32')
+        params[prefix + '_newsigma'] = np.ones(shape=(nout,)).astype('float32')
+
     params[prefix + '_W'] = norm_weight(nin, nout)
     params[prefix + '_b'] = zero_vector(nout)
 
     return params
-
 
 def fflayer(tparams,
             state_below,
             options,
             prefix='rconv',
             activ='lambda x: tensor.tanh(x)',
-            batch_norm=False,
-            layer_norm=False,
-            mean_ln=False,
-            mean_bn=False,
+            weight_norm = False,
             **kwargs):
     preactivation = tensor.dot(state_below, tparams[prefix + '_W']) +tparams[prefix + '_b']
 
+    if prefix + "_newmu" in tparams:
+        batch_norm = True
+    else:
+        batch_norm = False
+
+    print "using batch norm", batch_norm
+
     if batch_norm:
         preactivation = (preactivation - preactivation.mean(axis=0)) / (0.0001 + preactivation.std(axis=0))
-    if layer_norm:
-        preactivation = (preactivation - preactivation.mean(axis=1,keepdims=True)) / (0.0000001 + preactivation.std(axis=1,keepdims=True))
-    if mean_bn:
-        preactivation = (preactivation - preactivation.mean(axis=0)) + tparams[prefix + '_b']
-    if mean_ln:
-        preactivation = (preactivation - preactivation.mean(axis=1,keepdims=True)) + tparams[prefix + '_b']
+        preactivation = preactivation + 0.0*(tparams[prefix+'_newmu'] + preactivation*tparams[prefix+'_newsigma'])
+    #if layer_norm:
+    #    preactivation = (preactivation - preactivation.mean(axis=1,keepdims=True)) / (0.0000001 + preactivation.std(axis=1,keepdims=True))
+    #if mean_bn:
+    #    preactivation = (preactivation - preactivation.mean(axis=0)) + tparams[prefix + '_b']
+    #if mean_ln:
+    #    preactivation = (preactivation - preactivation.mean(axis=1,keepdims=True)) + tparams[prefix + '_b']
+
+    if weight_norm:
+        #print "ln"
+        #preactivation = (preactivation - preactivation.mean(axis=1,keepdims=True)) / (0.0001 + preactivation.std(axis=1,keepdims=True))
+        print "weight norm over axis 1"
+        preactivation = preactivation / (0.001 + T.addbroadcast(T.sqrt(T.sqr(tparams[prefix+'_W']).sum(axis=1,keepdims=True)),0))
 
     return eval(activ)(preactivation)
 
