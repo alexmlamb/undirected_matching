@@ -114,15 +114,14 @@ def init_gparams(p):
 
     p = param_init_convlayer(options={},params=p,prefix='to_z2_1',nin=256,nout=512,kernel_len=5,batch_norm=True)
 
-    p = param_init_fflayer(options={},params=p,prefix='to_z2_mu',nin=nl*2,nout=512*4*4,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='to_z2_mu',nin=512*4*4,nout=nl,batch_norm=False)
 
-    p = param_init_fflayer(options={},params=p,prefix='to_z2_sigma',nin=nl*2,nout=512*4*4,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='to_z2_sigma',nin=512*4*4,nout=nl,batch_norm=False)
 
     #to_x.  z1 is (8,8,256).  (16,16,128).  (32,32,3).  
 
     p = param_init_convlayer(options={},params=p,prefix='to_x_1',nin=256,nout=128,kernel_len=5,batch_norm=True)
-    p = param_init_convlayer(options={},params=p,prefix='to_x_2',nin=128,nout=64,kernel_len=5,batch_norm=True)
-    p = param_init_convlayer(options={},params=p,prefix='to_x_3',nin=64,nout=3,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='to_x_2',nin=128,nout=3,kernel_len=5,batch_norm=False)
 
     return init_tparams(p)
 
@@ -152,11 +151,11 @@ def to_x(p,z1):
 
     d1 = convlayer(tparams=p,state_below=z1,options={},prefix='to_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
 
-    d2 = convlayer(tparams=p,state_below=d1,options={},prefix='to_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
+    d2 = convlayer(tparams=p,state_below=d1,options={},prefix='to_x_2',activ='lambda x: x',stride=-2)
 
-    d3 = convlayer(tparams=p,state_below=d2,options={},prefix='to_x_3',activ='lambda x: x',stride=-2)
+    x_new = d2.flatten(2)
 
-    x_new = d3.flatten(2)
+    x_new = x_new.reshape((64,3*32*32))
 
     return x_new
 
@@ -169,8 +168,8 @@ def to_z2(p,z1):
     eo = e1
     eo = eo.flatten(2)
 
-    sigma = fflayer(tparams=p,state_below=eo,options={},prefix='to_z2_mu',activ='lambda x: x')
-    mu = fflayer(tparams=p,state_below=eo,options={},prefix='to_z2_sigma',activ='lambda x: x')
+    sigma = fflayer(tparams=p,state_below=eo,options={},prefix='to_z2_sigma',activ='lambda x: x')
+    mu = fflayer(tparams=p,state_below=eo,options={},prefix='to_z2_mu',activ='lambda x: x')
 
     eps = srng.normal(size=sigma.shape)
 
@@ -184,7 +183,8 @@ def to_z1(p,x,z2):
 
     x = x.reshape((64,3,32,32))
 
-    z_inp = join2(z2, srng.normal(size=z2.shape))
+    print "turned off extra noise in transition to z1"
+    z_inp = join2(z2, 0.0*srng.normal(size=z2.shape))
 
     h1 = fflayer(tparams=p,state_below=z_inp,options={},prefix='to_z1_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
 
@@ -198,7 +198,7 @@ def to_z1(p,x,z2):
 
     h5 = convlayer(tparams=p,state_below=join2(h4,x),options={},prefix='to_z1_5',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    h6 = convlayer(tparams=p,state_below=h5,options={},prefix='to_z1_6',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    h6 = convlayer(tparams=p,state_below=h5,options={},prefix='to_z1_6',activ='lambda x: x',stride=2)
 
     return h6.flatten(2)
 
@@ -231,7 +231,7 @@ def discriminator(p,x,z):
 
 def p_chain(p, num_iterations):
 
-    x_initial = srng.normal(size = (64,3,32,32))
+    x_initial = srng.normal(size = (64,3*32*32))
     z2_initial = srng.normal(size = (64,128))
 
     z1_lst = []
@@ -259,10 +259,10 @@ def q_chain(p,x,num_iterations):
 
     z1_lst = []
     z2_lst = [z2_initial]
-    x_lst = [inverse_sigmoid(x)]
+    x_lst = [x]
 
     for inds in range(0,num_iterations):
-        z1_new = to_z1(p, x=consider_constant(x_lst[-1]), z2=consider_constant(z2_lst[-1]))
+        z1_new = to_z1(p, x=consider_constant(inverse_sigmoid(x_lst[-1])), z2=consider_constant(z2_lst[-1]))
         z1_lst.append(z1_new)
 
         z2_new = to_z2(p,z1_lst[-1])
@@ -271,10 +271,17 @@ def q_chain(p,x,num_iterations):
 
     return x_lst, z1_lst, z2_lst
 
+def onestep(p,x,z2):
+    print "added inverse sigmoid to one step func"
+    z1 = to_z1(p, x=inverse_sigmoid(x), z2=z2)
+    new_x = to_x(p,z1)
+    new_z2 = to_z2(p,z1)
+
+    return new_x, new_z2
+
 gparams = init_gparams({})
 dparams = init_dparams({})
 
-#z_in = T.matrix('z_in')
 x_in = T.matrix()
 
 p_lst_x,p_lst_z1,p_lst_z2 = p_chain(gparams, num_steps)
@@ -290,7 +297,6 @@ print q_lst_x
 print q_lst_z2
 
 D_p_lst_1,D_feat_p_1 = discriminator(dparams, p_lst_x[-1], p_lst_z2[-1])
-#D_p_lst_2,D_feat_p_2 = discriminator(dparams, p_lst_x[-2], p_lst_z2[-2])
 
 D_p_lst = D_p_lst_1
 
@@ -317,7 +323,14 @@ train_disc_gen_classifier = theano.function(inputs = [x_in], outputs=[dloss,p_ls
 #get_zinf = theano.function([x_in], outputs=z_inf)
 #get_dfeat = theano.function([x_in], outputs=D_feat_q)
 
-get_pchain = theano.function([], outputs = p_lst_x_long)
+get_pchain = theano.function([], outputs = p_lst_x_long + p_lst_z2_long)
+
+z2_in_onestep = T.matrix()
+x_in_onestep = T.matrix()
+
+x_onestep, z2_onestep = onestep(gparams, x_in_onestep, z2_in_onestep)
+
+onestep_func = theano.function(inputs = [x_in_onestep, z2_in_onestep], outputs = [x_onestep, z2_onestep])
 
 if __name__ == '__main__':
 
@@ -325,16 +338,7 @@ if __name__ == '__main__':
 
     for iteration in range(0,500000):
 
-        if persist_p_chain:
-            z_in_new = rng.normal(size=(64,nl)).astype('float32')
-            blending = rng.uniform(0.0,1.0,size=(64,))
-            z_in_new[blending>=blending_rate] = z_out_p[blending>=blending_rate]
-            z_in = z_in_new
-        else:
-            z_in = rng.normal(size=(64,nl)).astype('float32')
-
-        if latent_sparse:
-            z_in[:,128:] *= 0.0
+        z_in = rng.normal(size=(64,nl)).astype('float32')
 
         r = random.randint(0,50000-64)
         
@@ -361,6 +365,7 @@ if __name__ == '__main__':
 
         if iteration % 1000 == 0:
             print "dloss", dloss
+            print "gen x shape", gen_x.shape
             plot_images(gen_x, "plots/" + slurm_name + "_gen.png")
             #plot_images(reconstruct(x_in).reshape((64,1,28,28)), "plots/" + slurm_name + "_rec.png")
 
@@ -373,11 +378,20 @@ if __name__ == '__main__':
 
             plot_images(x_in, "plots/" + slurm_name + "_original.png")
             
-            p_chain = get_pchain()
-            for j in range(0,len(p_chain)):
+            p_chain_lst = get_pchain()
+            p_chain_x = p_chain_lst[0:20]
+            p_chain_z2 = p_chain_lst[20:]
+            for j in range(0,len(p_chain_x)):
                 print "printing element of p_chain", j
-                plot_images(p_chain[j], "plots/" + slurm_name + "_pchain_" + str(j) + ".png")
+                plot_images(p_chain_x[j], "plots/" + slurm_name + "_pchain_" + str(j) + ".png")
 
+            x_chain = p_chain_x[-1]
+            z2_chain = p_chain_z2[-1]
+            for j in range(0,15):
+                print "producing chain with z2 clamped"
+                x_chain,_ = onestep_func(x_chain,z2_chain)
+
+                plot_images(x_chain, "plots/" + slurm_name + "_z2clamp_" + str(j) + ".png")
 
 
 
