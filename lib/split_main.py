@@ -94,35 +94,30 @@ print 'blending rate (odds of keeping old z in P chain)', blending_rate
 
 def init_gparams(p):
 
-    #to_z1, to_z2, to_x
+    p = param_init_fflayer(options={},params=p,prefix='z_to_x1_1',nin=nl,nout=256*8*4,batch_norm=True)
 
-    #to_z1 takes z2 and x and new noise.  z2 is (128).  FC to (4,4,512).  Upconv to (8,8,256).  Upconv to (16,16,128).  Upconv to (32,32,64).  Append to x.  Deconv to (16,16,128).  Deconv to (8,8,256).  
+    p = param_init_convlayer(options={},params=p,prefix='z_to_x1_2',nin=256,nout=128,kernel_len=5,batch_norm=True)
 
-    p = param_init_fflayer(options={},params=p,prefix='to_z1_1',nin=nl*2,nout=512*4*4,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='z_to_x1_3',nin=128,nout=3,kernel_len=5,batch_norm=False)
 
-    p = param_init_convlayer(options={},params=p,prefix='to_z1_2',nin=512,nout=256,kernel_len=5,batch_norm=True)
+    p = param_init_fflayer(options={},params=p,prefix='z_to_x2_1',nin=nl,nout=256*8*4,batch_norm=True)
 
-    p = param_init_convlayer(options={},params=p,prefix='to_z1_3',nin=256,nout=128,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='z_to_x2_2',nin=256,nout=128,kernel_len=5,batch_norm=True)
 
-    p = param_init_convlayer(options={},params=p,prefix='to_z1_4',nin=128,nout=64,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='z_to_x2_3',nin=128,nout=3,kernel_len=5,batch_norm=False)    
 
-    p = param_init_convlayer(options={},params=p,prefix='to_z1_5',nin=64+3,nout=128,kernel_len=5,batch_norm=True)
 
-    p = param_init_convlayer(options={},params=p,prefix='to_z1_6',nin=128,nout=256,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='x1_to_z_1',nin=3,nout=128,kernel_len=5,batch_norm=True)
 
-    #to_z2.  z1 is (8,8,256).  (4,4,512).  fc (128,) mu/sigma.  
+    p = param_init_convlayer(options={},params=p,prefix='x1_to_z_2',nin=128,nout=256,kernel_len=5,batch_norm=True)
 
-    p = param_init_convlayer(options={},params=p,prefix='to_z2_1',nin=256,nout=512,kernel_len=5,batch_norm=True)
+    p = param_init_fflayer(options={},params=p,prefix='x1_to_z_3',nin=256*8*4,nout=128,kernel_len=5,batch_norm=False)
 
-    p = param_init_fflayer(options={},params=p,prefix='to_z2_mu',nin=nl*2,nout=512*4*4,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='x2_to_z_1',nin=3,nout=128,kernel_len=5,batch_norm=True)
 
-    p = param_init_fflayer(options={},params=p,prefix='to_z2_sigma',nin=nl*2,nout=512*4*4,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='x2_to_z_2',nin=128,nout=256,kernel_len=5,batch_norm=True)
 
-    #to_x.  z1 is (8,8,256).  (16,16,128).  (32,32,3).  
-
-    p = param_init_convlayer(options={},params=p,prefix='to_x_1',nin=256,nout=128,kernel_len=5,batch_norm=True)
-    p = param_init_convlayer(options={},params=p,prefix='to_x_2',nin=128,nout=64,kernel_len=5,batch_norm=True)
-    p = param_init_convlayer(options={},params=p,prefix='to_x_3',nin=64,nout=3,kernel_len=5,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='x2_to_z_3',nin=256*8*4,nout=128,kernel_len=5,batch_norm=False)
 
     return init_tparams(p)
 
@@ -146,61 +141,62 @@ def init_dparams(p):
 
     return init_tparams(p)
 
-def to_x(p,z1):
+def z_to_x1(p,z):
 
-    z1 = z1.reshape((64,256,8,8))
+    d1 = fflayer(tparams=p,state_below=z,options={},prefix='z_to_x1_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
 
-    d1 = convlayer(tparams=p,state_below=z1,options={},prefix='to_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
+    d1 = d1.reshape((64,256,8,4))
 
-    d2 = convlayer(tparams=p,state_below=d1,options={},prefix='to_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
+    d2 = convlayer(tparams=p,state_below=d1,options={},prefix='z_to_x1_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
 
-    d3 = convlayer(tparams=p,state_below=d2,options={},prefix='to_x_3',activ='lambda x: x',stride=-2)
+    d3 = convlayer(tparams=p,state_below=d2,options={},prefix='z_to_x1_3',activ='lambda x: x',stride=-2)
 
-    x_new = d3.flatten(2)
+    return d3
 
-    return x_new
+def z_to_x2(p,z):
 
-def to_z2(p,z1):
+    d1 = fflayer(tparams=p,state_below=z,options={},prefix='z_to_x2_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
 
-    z1 = z1.reshape((64,256,8,8))
+    d1 = d1.reshape((64,256,8,4))
 
-    e1 = convlayer(tparams=p,state_below=z1,options={},prefix='to_z2_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    d2 = convlayer(tparams=p,state_below=d1,options={},prefix='z_to_x2_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
 
-    eo = e1
-    eo = eo.flatten(2)
+    d3 = convlayer(tparams=p,state_below=d2,options={},prefix='z_to_x2_3',activ='lambda x: x',stride=-2)
 
-    sigma = fflayer(tparams=p,state_below=eo,options={},prefix='to_z2_mu',activ='lambda x: x')
-    mu = fflayer(tparams=p,state_below=eo,options={},prefix='to_z2_sigma',activ='lambda x: x')
+    return d3
 
-    eps = srng.normal(size=sigma.shape)
 
-    z_new = eps*T.nnet.sigmoid(sigma) + mu
 
-    z_new = (z_new - T.mean(z_new, axis=0, keepdims=True)) / (0.001 + T.std(z_new, axis=0, keepdims=True))
-
-    return z_new
-
-def to_z1(p,x,z2):
+def x1_to_z(p,x):
 
     x = x.reshape((64,3,32,32))
 
-    z_inp = join2(z2, srng.normal(size=z2.shape))
+    d1 = convlayer(tparams=p,state_below=x,options={},prefix='x1_to_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    h1 = fflayer(tparams=p,state_below=z_inp,options={},prefix='to_z1_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
+    d2 = convlayer(tparams=p,state_below=d1,options={},prefix='x1_to_z_2',activ='lambda x: T.nnet.relu(x,alpha=0.02)',stride=2)
 
-    h1 = h1.reshape((64,512,4,4))
+    d2 = d2.flatten(2)
 
-    h2 = convlayer(tparams=p,state_below=h1,options={},prefix='to_z1_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
+    d3 = fflayer(tparams=p,state_below=d2,options={},prefix='x1_to_z_3',activ='lambda x: x')
 
-    h3 = convlayer(tparams=p,state_below=h2,options={},prefix='to_z1_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
+    return d3
 
-    h4 = convlayer(tparams=p,state_below=h3,options={},prefix='to_z1_4',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
 
-    h5 = convlayer(tparams=p,state_below=join2(h4,x),options={},prefix='to_z1_5',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+def x2_to_z(p,x):
 
-    h6 = convlayer(tparams=p,state_below=h5,options={},prefix='to_z1_6',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    x = x.reshape((64,3,32,32))
 
-    return h6.flatten(2)
+    d1 = convlayer(tparams=p,state_below=x,options={},prefix='x2_to_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+
+    d2 = convlayer(tparams=p,state_below=d1,options={},prefix='x2_to_z_2',activ='lambda x: T.nnet.relu(x,alpha=0.02)',stride=2)
+
+    d2 = d2.flatten(2)
+
+    d3 = fflayer(tparams=p,state_below=d2,options={},prefix='x2_to_z_3',activ='lambda x: x')
+
+    return d3
+
+
 
 def discriminator(p,x,z):
 

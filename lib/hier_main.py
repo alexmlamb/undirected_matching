@@ -100,15 +100,17 @@ def init_gparams(p):
 
     p = param_init_fflayer(options={},params=p,prefix='to_z1_1',nin=nl*2,nout=512*4*4,batch_norm=True)
 
-    p = param_init_convlayer(options={},params=p,prefix='to_z1_2',nin=512,nout=256,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='to_z1_2',nin=512,nout=256,kernel_len=5,batch_norm=False)
 
-    p = param_init_convlayer(options={},params=p,prefix='to_z1_3',nin=256,nout=128,kernel_len=5,batch_norm=True)
+    #p = param_init_convlayer(options={},params=p,prefix='to_z1_3',nin=256,nout=128,kernel_len=5,batch_norm=True)
 
-    p = param_init_convlayer(options={},params=p,prefix='to_z1_4',nin=128,nout=64,kernel_len=5,batch_norm=True)
+    #p = param_init_convlayer(options={},params=p,prefix='to_z1_4',nin=128,nout=64,kernel_len=5,batch_norm=True)
 
-    p = param_init_convlayer(options={},params=p,prefix='to_z1_5',nin=64+3,nout=128,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='to_z1_3',nin=3,nout=128,kernel_len=5,batch_norm=True)
 
-    p = param_init_convlayer(options={},params=p,prefix='to_z1_6',nin=128,nout=256,kernel_len=5,batch_norm=False)
+    #print "extra bn in z1"
+
+    p = param_init_convlayer(options={},params=p,prefix='to_z1_4',nin=128,nout=256,kernel_len=5,batch_norm=False)
 
     #to_z2.  z1 is (8,8,256).  (4,4,512).  fc (128,) mu/sigma.  
 
@@ -129,7 +131,7 @@ def init_dparams(p):
 
     p = param_init_convlayer(options={},params=p,prefix='DC_1',nin=3,nout=128,kernel_len=5,batch_norm=False)
     p = param_init_convlayer(options={},params=p,prefix='DC_2',nin=128,nout=256,kernel_len=5,batch_norm=False)
-    p = param_init_convlayer(options={},params=p,prefix='DC_3',nin=256,nout=512,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='DC_3',nin=256+256,nout=512,kernel_len=5,batch_norm=False)
 
     p = param_init_fflayer(options={},params=p,prefix='D_1',nin=nl+512*4*4,nout=nfd,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='D_2',nin=nfd,nout=nfd,ortho=False,batch_norm=False)
@@ -183,34 +185,36 @@ def to_z1(p,x,z2):
 
     x = x.reshape((64,3,32,32))
 
-    print "turned off extra noise in transition to z1"
-    z_inp = join2(z2, 0.0*srng.normal(size=z2.shape))
+    print "turned on extra noise in transition to z1"
+    z_inp = join2(z2, 0.1*srng.normal(size=z2.shape))
 
     h1 = fflayer(tparams=p,state_below=z_inp,options={},prefix='to_z1_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
 
     h1 = h1.reshape((64,512,4,4))
 
-    h2 = convlayer(tparams=p,state_below=h1,options={},prefix='to_z1_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
+    h2 = convlayer(tparams=p,state_below=h1,options={},prefix='to_z1_2',activ='lambda x: x',stride=-2)
 
-    h3 = convlayer(tparams=p,state_below=h2,options={},prefix='to_z1_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
+    #h3 = convlayer(tparams=p,state_below=h2,options={},prefix='to_z1_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
 
-    h4 = convlayer(tparams=p,state_below=h3,options={},prefix='to_z1_4',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
+    #h4 = convlayer(tparams=p,state_below=h3,options={},prefix='to_z1_4',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
 
-    h5 = convlayer(tparams=p,state_below=join2(h4,x),options={},prefix='to_z1_5',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    h5 = convlayer(tparams=p,state_below=x,options={},prefix='to_z1_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    h6 = convlayer(tparams=p,state_below=h5,options={},prefix='to_z1_6',activ='lambda x: x',stride=2)
+    h6 = convlayer(tparams=p,state_below=h5,options={},prefix='to_z1_4',activ='lambda x: x',stride=2)
 
-    return h6.flatten(2)
+    h_out = h2 + h6
 
-def discriminator(p,x,z):
+    return h_out.flatten(2)
+
+def discriminator(p,x,z1,z2):
 
     dc_1 = convlayer(tparams=p,state_below=x.reshape((64,3,32,32)),options={},prefix='DC_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
     dc_2 = convlayer(tparams=p,state_below=dc_1,options={},prefix='DC_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    dc_3 = convlayer(tparams=p,state_below=dc_2,options={},prefix='DC_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    dc_3 = convlayer(tparams=p,state_below=join2(dc_2,z1.reshape((64,256,8,8))),options={},prefix='DC_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    inp = join2(z,dc_3.flatten(2))
+    inp = join2(z2,dc_3.flatten(2))
 
     h1 = fflayer(tparams=p,state_below=inp,options={},prefix='D_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',mean_ln=False)
 
@@ -296,13 +300,13 @@ print p_lst_z2
 print q_lst_x
 print q_lst_z2
 
-D_p_lst_1,D_feat_p_1 = discriminator(dparams, p_lst_x[-1], p_lst_z2[-1])
+D_p_lst_1,D_feat_p_1 = discriminator(dparams, p_lst_x[-1], p_lst_z1[-1], p_lst_z2[-1])
 
 D_p_lst = D_p_lst_1
 
 print "using single disc at end"
 
-D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z2[-1])
+D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z1[-1], q_lst_z2[-1])
 
 dloss, gloss = lsgan_loss(D_q_lst, D_p_lst)
 
