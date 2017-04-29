@@ -11,6 +11,7 @@ def normalize(x):
 def denormalize(x):
     return (x) * 255.0
 
+
 class FileData:
 
 
