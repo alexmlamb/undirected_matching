@@ -14,7 +14,7 @@ sys.path.append("/u/lambalex/DeepLearning/undirected_matching/lib")
 import theano
 import theano.tensor as T
 from nn_layers import fflayer, param_init_fflayer, param_init_convlayer, convlayer
-from utils import init_tparams, join2, srng, dropout, inverse_sigmoid, join3
+from utils import init_tparams, join2, srng, dropout, inverse_sigmoid, join3, merge_images
 from loss import accuracy, crossent, lsgan_loss, wgan_loss
 import lasagne
 import numpy as np
@@ -37,8 +37,8 @@ class ConsiderConstant(theano.compile.ViewOp):
 consider_constant = ConsiderConstant()
 
 #dataset = "mnist"
-dataset = "anime"
-#dataset = "svhn"
+#dataset = "anime"
+dataset = "svhn"
 
 if dataset == "mnist":
     mn = gzip.open("/u/lambalex/data/mnist/mnist.pkl.gz")
@@ -74,7 +74,7 @@ nfd = 512
 print "dataset", dataset
 
 #3
-num_steps = 1
+num_steps = 3
 print "num steps", num_steps
 
 train_classifier_separate = True
@@ -239,6 +239,14 @@ def p_chain(p, z, num_iterations):
 
     return xlst, zlst
 
+def onestep_z_to_x(p,z):
+    x = T.nnet.sigmoid(z_to_x(p, z))
+    return x
+
+def onestep_x_to_z(p,x):
+    new_z = x_to_z(p, inverse_sigmoid(x))
+    return new_z
+
 def q_chain(p,x,num_iterations):
 
     xlst = [x]
@@ -296,6 +304,11 @@ train_disc_gen_classifier = theano.function(inputs = [x_in, z_in], outputs=[dlos
 #get_dfeat = theano.function([x_in], outputs=D_feat_q)
 
 get_pchain = theano.function([z_in], outputs = p_lst_x_long)
+
+x_in = T.matrix()
+
+func_z_to_x = theano.function([z_in], outputs = onestep_z_to_x(gparams, z_in))
+func_x_to_z = theano.function([x_in], outputs = onestep_x_to_z(gparams, x_in))
 
 if __name__ == '__main__':
 
@@ -355,6 +368,13 @@ if __name__ == '__main__':
             for j in range(0,len(p_chain)):
                 print "printing element of p_chain", j
                 plot_images(p_chain[j], "plots/" + slurm_name + "_pchain_" + str(j) + ".png")
+        
+            new_z = rng.normal(size=(64,nl)).astype('float32')
+            for j in range(0,len(p_chain)):
+                new_x = func_z_to_x(new_z)
+                new_x = merge_images(new_x, x_in)
+                new_z = func_x_to_z(new_x)
+                plot_images(new_x, "plots/" + slurm_name + "_inpainting_" + str(j) + ".png")
 
 
 

@@ -26,7 +26,7 @@ from viz import plot_images
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
+import time
 import os
 slurm_name = os.environ["SLURM_JOB_ID"]
 
@@ -99,28 +99,23 @@ def init_gparams(p):
     #to_z1 takes z2 and x and new noise.  z2 is (128).  FC to (4,4,512).  Upconv to (8,8,256).  Upconv to (16,16,128).  Upconv to (32,32,64).  Append to x.  Deconv to (16,16,128).  Deconv to (8,8,256).  
 
     p = param_init_fflayer(options={},params=p,prefix='to_z1_1',nin=nl*2,nout=512*4*4,batch_norm=True)
-
-    p = param_init_convlayer(options={},params=p,prefix='to_z1_2',nin=512,nout=256,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='to_z1_2',nin=512,nout=256,kernel_len=5,batch_norm=True)
 
     #p = param_init_convlayer(options={},params=p,prefix='to_z1_3',nin=256,nout=128,kernel_len=5,batch_norm=True)
 
     #p = param_init_convlayer(options={},params=p,prefix='to_z1_4',nin=128,nout=64,kernel_len=5,batch_norm=True)
 
     p = param_init_convlayer(options={},params=p,prefix='to_z1_3',nin=3,nout=128,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='to_z1_4',nin=128,nout=256,kernel_len=5,batch_norm=True)
 
-    #print "extra bn in z1"
-
-    p = param_init_convlayer(options={},params=p,prefix='to_z1_4',nin=128,nout=256,kernel_len=5,batch_norm=False)
-
-    #to_z2.  z1 is (8,8,256).  (4,4,512).  fc (128,) mu/sigma.  
+    p = param_init_convlayer(options={},params=p,prefix='to_z1_5',nin=512,nout=128,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='to_z1_6',nin=128,nout=256,kernel_len=5,batch_norm=True)
 
     p = param_init_convlayer(options={},params=p,prefix='to_z2_1',nin=256,nout=512,kernel_len=5,batch_norm=True)
 
     p = param_init_fflayer(options={},params=p,prefix='to_z2_mu',nin=512*4*4,nout=nl,batch_norm=False)
 
     p = param_init_fflayer(options={},params=p,prefix='to_z2_sigma',nin=512*4*4,nout=nl,batch_norm=False)
-
-    #to_x.  z1 is (8,8,256).  (16,16,128).  (32,32,3).  
 
     p = param_init_convlayer(options={},params=p,prefix='to_x_1',nin=256,nout=128,kernel_len=5,batch_norm=True)
     p = param_init_convlayer(options={},params=p,prefix='to_x_2',nin=128,nout=3,kernel_len=5,batch_norm=False)
@@ -185,24 +180,25 @@ def to_z1(p,x,z2):
 
     x = x.reshape((64,3,32,32))
 
-    print "turned on extra noise in transition to z1"
-    z_inp = join2(z2, 0.1*srng.normal(size=z2.shape))
+    print "turned off extra noise in transition to z1"
+    z_inp = join2(z2, 0.0*srng.normal(size=z2.shape))
 
     h1 = fflayer(tparams=p,state_below=z_inp,options={},prefix='to_z1_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
 
     h1 = h1.reshape((64,512,4,4))
 
-    h2 = convlayer(tparams=p,state_below=h1,options={},prefix='to_z1_2',activ='lambda x: x',stride=-2)
-
-    #h3 = convlayer(tparams=p,state_below=h2,options={},prefix='to_z1_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
-
-    #h4 = convlayer(tparams=p,state_below=h3,options={},prefix='to_z1_4',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
+    h2 = convlayer(tparams=p,state_below=h1,options={},prefix='to_z1_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
 
     h5 = convlayer(tparams=p,state_below=x,options={},prefix='to_z1_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    h6 = convlayer(tparams=p,state_below=h5,options={},prefix='to_z1_4',activ='lambda x: x',stride=2)
+    h6 = convlayer(tparams=p,state_below=h5,options={},prefix='to_z1_4',activ='lambda x: T.nnet.relu(x,alpha=0.02)',stride=2)
 
-    h_out = h2 + h6
+    h7 = join2(h2,h6)
+
+    h8 = convlayer(tparams=p,state_below=h7,options={},prefix='to_z1_5',activ='lambda x: T.nnet.relu(x,alpha=0.02)',stride=2)
+    h9 = convlayer(tparams=p,state_below=h8,options={},prefix='to_z1_6',activ='lambda x: T.nnet.relu(x,alpha=0.02)',stride=-2)
+
+    h_out = h9
 
     return h_out.flatten(2)
 
@@ -230,7 +226,7 @@ def discriminator(p,x,z1,z2):
     D5 = convlayer(tparams=p,state_below=dc_2,options={},prefix='D_o_5',activ='lambda x: x',stride=2)
     D6 = convlayer(tparams=p,state_below=dc_3,options={},prefix='D_o_6',activ='lambda x: x',stride=2)
 
-    print "special thing in D"
+    print "turned off none of D"
     return [D1,D2,D3,D4,D5,D6], h3
 
 def p_chain(p, num_iterations):
@@ -300,13 +296,16 @@ print p_lst_z2
 print q_lst_x
 print q_lst_z2
 
-D_p_lst_1,D_feat_p_1 = discriminator(dparams, p_lst_x[-1], p_lst_z1[-1], p_lst_z2[-1])
+D_p_lst_1,D_feat_p_1 = discriminator(dparams, p_lst_x[-1], p_lst_z1[-1]*1, p_lst_z2[-1]*1)
+D_p_lst_2,D_feat_p_1 = discriminator(dparams, p_lst_x[-2], p_lst_z1[-2]*1, p_lst_z2[-2]*1)
+D_p_lst_3,D_feat_p_1 = discriminator(dparams, p_lst_x[-2], p_lst_z1[-2]*1, p_lst_z2[-2]*1)
 
-D_p_lst = D_p_lst_1
+D_p_lst = D_p_lst_1 + D_p_lst_2 + D_p_lst_3
 
-print "using single disc at end"
+print "using triple disc at end"
+print "giving z values to disc"
 
-D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z1[-1], q_lst_z2[-1])
+D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z1[-1]*1, q_lst_z2[-1]*1)
 
 dloss, gloss = lsgan_loss(D_q_lst, D_p_lst)
 
@@ -361,11 +360,14 @@ if __name__ == '__main__':
         elif dataset == "svhn":
             x_in = normalize(svhnData.getBatch()['x']).reshape((64,32*32*3))
 
+        t0 = time.time()
         dloss,gen_x,z_out_p = train_disc_gen_classifier(x_in)
+        t0 = time.time() - t0
 
         print "iteration", iteration
         print "dloss", dloss
         print "gen_x mean", gen_x.mean()
+        print "update time 1 example", t0
 
         if iteration % 1000 == 0:
             print "dloss", dloss

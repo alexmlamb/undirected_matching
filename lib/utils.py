@@ -11,6 +11,8 @@ from collections import OrderedDict
 import time
 import os
 from sklearn.cross_validation import KFold
+import numpy as np
+import numpy.random as rng
 
 # make prefix-appended name
 def _p(pp, name):
@@ -37,8 +39,13 @@ def create_log_dir(suffix, model_id):
     return model_dir
 
 
+def merge_images(img1,img2):
+    i1 = img1.reshape((64,3,32,32))
+    i2 = img2.reshape((64,3,32,32))
 
+    new_img = np.concatenate([i1[:,:,:,0:16], i2[:,:,:,16:32]], axis = 3)
 
+    return new_img.reshape((64,32*32*3))
 
 # get the list of parameters: Note that tparams must be OrderedDict
 def itemlist(tparams):
@@ -231,3 +238,16 @@ class Parameters():
         return True
 
       #here is the information to commit..
+
+if __name__ == "__main__":
+
+    import numpy.random as rng
+    import numpy as np
+    x1 = rng.normal(size = (64,3,32,32))
+    x2 = np.zeros(shape = (64,3,32,32))
+
+    x3 = merge_images(x1,x2)
+
+    print x3.shape
+
+    

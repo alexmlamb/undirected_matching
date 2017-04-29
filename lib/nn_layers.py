@@ -79,12 +79,15 @@ def param_init_convlayer(options,params,prefix='ff',nin=None,nout=None,kernel_le
 
 def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor.tanh(x)',stride=None):
 
-    print "kernel shape", tparams[prefix+"_W"].get_value().shape[2]
+    #print "kernel shape", tparams[prefix+"_W"].get_value().shape[2]
 
     kernel_shape = tparams[prefix+"_W"].get_value().shape[2]
 
     if kernel_shape == 5:
-        padsize = 2
+        if stride == 2 or stride == -2:
+            padsize = 2
+        else:
+            padsize = 2
     elif kernel_shape == 1:
         padsize = 0
     else:
@@ -99,7 +102,7 @@ def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor
 
     if prefix+"_newmu" in tparams:
         batch_norm = True
-        print "using batch norm for prefix", prefix
+        #print "using batch norm for prefix", prefix
     else:
         batch_norm = False
 
@@ -145,7 +148,6 @@ def fflayer(tparams,
     else:
         batch_norm = False
 
-    print "using batch norm", batch_norm
 
     if batch_norm:
         preactivation = (preactivation - preactivation.mean(axis=0)) / (0.0001 + preactivation.std(axis=0))
@@ -160,7 +162,6 @@ def fflayer(tparams,
     if weight_norm:
         #print "ln"
         #preactivation = (preactivation - preactivation.mean(axis=1,keepdims=True)) / (0.0001 + preactivation.std(axis=1,keepdims=True))
-        print "weight norm over axis 1"
         preactivation = preactivation / (0.001 + T.addbroadcast(T.sqrt(T.sqr(tparams[prefix+'_W']).sum(axis=1,keepdims=True)),0))
 
     return eval(activ)(preactivation)
