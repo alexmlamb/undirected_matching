@@ -1,0 +1,102 @@
+'''Convolutional model
+
+'''
+
+from nn_layers import param_init_fflayer, param_init_convlayer
+
+
+DIM_H = 128
+
+def init_gparams(p):
+
+    p = param_init_fflayer(
+        options={}, params=p, prefix='z_x_1', nin=nl * 2, nout=DIM_H * 4 * 4 * 4,
+        ortho=False, batch_norm=True)
+
+    p = param_init_convlayer(
+        options={}, params=p, prefix='z_x_2', nin=DIM_H * 4, nout=DIM_H * 2, kernel_len=5,
+        batch_norm=True)
+
+    p = param_init_convlayer(
+        options={}, params=p, prefix='z_x_3', nin=DIM_H * 2 * 1, nout=DIM_H, kernel_len=
+        5, batch_norm=True)
+
+    p = param_init_convlayer(
+        options={}, params=p, prefix='z_x_4', nin=DIM_H * 1, nout=3, kernel_len=5,
+        batch_norm=False)
+
+    p = param_init_convlayer(
+        options={}, params=p, prefix='x_z_1', nin=3, nout=DIM_H, kernel_len=5,
+        batch_norm=True)
+
+    p = param_init_convlayer(
+        options={}, params=p, prefix='x_z_2', nin=DIM_H, nout=DIM_H * 2, kernel_len=5,
+        batch_norm=True)
+
+    p = param_init_convlayer(
+        options={}, params=p, prefix='x_z_3', nin=256, nout=512, kernel_len=5,
+        batch_norm=True)
+
+    p = param_init_fflayer(
+        options={}, params=p, prefix='x_z_mu', nin=512 * 4 * 4, nout=nl,
+        ortho=False, batch_norm=False)
+
+    p = param_init_fflayer(
+        options={}, params=p, prefix='x_z_sigma', nin=512 * 4 * 4, nout=nl,
+        ortho=False, batch_norm=False)
+
+    return init_tparams(p)
+
+
+def init_dparams(p):
+
+    p = param_init_convlayer(
+        options={}, params=p, prefix='DC_1', nin=3, nout=128, kernel_len=5,
+        batch_norm=False)
+    
+    p = param_init_convlayer(
+        options={}, params=p, prefix='DC_2', nin=128, nout=256, kernel_len=5,
+        batch_norm=False)
+    
+    p = param_init_convlayer(
+        options={}, params=p, prefix='DC_3', nin=256, nout=512, kernel_len=5,
+        batch_norm=False)
+
+    p = param_init_fflayer(
+        options={}, params=p, prefix='D_1', nin=nl + 512 * 4 * 4, nout=nfd,
+        ortho=False, batch_norm=False)
+
+    p = param_init_ff_layer(
+        options={}, params=p, prefix='D_2', nin=nfd, nout=nfd, ortho=False,
+        batch_norm=False)
+    
+    p = param_init_fflayer(
+        options={}, params=p, prefix='D_3', nin=nfd, nout=nfd, ortho=False,
+        batch_norm=False)
+
+    p = param_init_fflayer(
+        options={}, params=p, prefix='D_o_1', nin=nfd, nout=1, ortho=False,
+        batch_norm=False)
+    
+    p = param_init_fflayer(
+        options={}, params=p, prefix='D_o_2', nin=nfd, nout=1, ortho=False,
+        batch_norm=False)
+    
+    p = param_init_fflayer(
+        options={}, params=p, prefix='D_o_3', nin=nfd, nout=1, ortho=False,
+        batch_norm=False)
+
+    p = param_init_convlayer(
+        options={}, params=p, prefix='D_o_4', nin=128, nout=1, kernel_len=5,
+        batch_norm=False)
+
+    p = param_init_convlayer(
+        options={}, params=p, prefix='D_o_5', nin=256, nout=1, kernel_len=5,
+        batch_norm=False)
+    
+    p = param_init_convlayer(
+        options={}, params=p, prefix='D_o_6', nin=512, nout=1, kernel_len=5,
+        batch_norm=False)
+
+    return init_tparams(p)
+
