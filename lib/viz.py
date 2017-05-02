@@ -130,7 +130,7 @@ def plot_images(X, fname, title=""):
 
     ## plot
     # move color to end
-    Xcol = X.reshape((X.shape[0],-1,)).T
+    Xcol = X.reshape((X.shape[0], -1,)).T
     plt.figure(figsize=[8,8])
     if show_receptive_fields(Xcol, n_colors=X.shape[1], title=title):
         #plt.savefig(fname + '.pdf')

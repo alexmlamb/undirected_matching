@@ -31,6 +31,7 @@ logger = logging.getLogger('UDGAN')
 
 from data import load_stream, Pad
 from exptools import make_argument_parser, setup_out_dir
+import imageio
 from loggers import set_stream_logger
 from loss import accuracy, crossent, lsgan_loss, wgan_loss
 from models import conv1
@@ -147,6 +148,16 @@ def compile_chain(z, gparams, num_steps_long=None, **model_args):
     return f
 
 
+def compile_inpaint_chain(x, z, gparams, num_steps_long=None, **model_args):
+    logger.info("Compiling inpaint function")
+    p_lst_x_long = inpaint_chain(
+        gparams, x, z, num_steps_long, **model_args)
+    
+    f = theano.function([x, z], outputs=p_lst_x_long)
+    
+    return f
+
+
 def compile_piecewise_chain(z, x, gparams, **model_args):
     logger.info("Compiling piecewise chain function")
     f_z_to_x = theano.function([z], outputs=onestep_z_to_x(gparams, z))
@@ -202,6 +213,24 @@ def p_chain(p, z, num_iterations, pd_steps=None, **model_args):
     
     assert len(xlst) == len(zlst)
     return xlst, zlst
+
+
+def inpaint_chain(p, x, z, num_iterations, **model_args):
+    z_to_x = MODULE.z_to_x
+    x_to_z = MODULE.x_to_z
+    x_gt = inverse_sigmoid(x)
+    xlst = [x_gt]
+    
+    for i in xrange(num_iterations):
+        x = z_to_x(p, z, **model_args)
+        x = T.set_subtensor(x[:, :, :DIM_X // 2, :], x_gt[:, :, :DIM_X // 2, :])
+        xlst.append(x)
+        z = x_to_z(p, x, **model_args)
+
+    for j in range(len(xlst)):
+        xlst[j] = T.nnet.sigmoid(xlst[j])
+        
+    return xlst
 
 
 def onestep_z_to_x(p, z, **model_args):
@@ -302,10 +331,10 @@ def prepare_data(source, pad_to=None, batch_size=None, **kwargs):
 
 # TRAIN ------------------------------------------------------------------------
 
-def train(train_fn, gen_fn, chain_fn, save_fn, datasets, data_shapes,
-          persist_p_chain=None, latent_sparse=None, num_epochs=None,
-          blending_rate=None, latent_sparse_num=None, batch_size=None,
-          binary_dir=None, image_dir=None, archive=None):
+def train(train_fn, gen_fn, chain_fn, inpaint_fn, save_fn, datasets,
+          data_shapes, persist_p_chain=None, latent_sparse=None,
+          num_epochs=None, blending_rate=None, latent_sparse_num=None,
+          batch_size=None, binary_dir=None, image_dir=None, archive=None):
     '''Train method.
     
     '''
@@ -376,14 +405,29 @@ def train(train_fn, gen_fn, chain_fn, save_fn, datasets, data_shapes,
         z_im = rng.normal(size=(64, DIM_Z)).astype(floatX)
         x_gen = gen_fn(z_im)
         x_chain = chain_fn(z_im)
+        inpaint_chain = inpaint_fn(x_in[:64], z_im)
         
         plot_images(
             x_gen, path.join(image_dir, 'gen_epoch_{}.png'.format(epoch)))
         plot_images(x_in[:64], path.join(image_dir, 'gt.png'))
         
-        for i, x_ in enumerate(x_chain):
-            plot_images(
-                x_, path.join(image_dir, 'gen_chain_{}.png'.format(i)))
+        chain = []
+        for x in inpaint_chain:
+            x = x.reshape(8, 8, DIM_C, DIM_X, DIM_Y)
+            x = x.transpose(0, 3, 1, 4, 2)
+            x = x.reshape(8 * DIM_X, 8 * DIM_Y, DIM_C)
+            chain.append(x)
+        
+        imageio.mimsave(path.join(image_dir, 'gen_inpaint.gif'), chain)
+        
+        chain = []
+        for x in x_chain:
+            x = x.reshape(8, 8, DIM_C, DIM_X, DIM_Y)
+            x = x.transpose(0, 3, 1, 4, 2)
+            x = x.reshape(8 * DIM_X, 8 * DIM_Y, DIM_C)
+            chain.append(x)
+        
+        imageio.mimsave(path.join(image_dir, 'gen_chain.gif'), chain)
             
     
 # MAIN -------------------------------------------------------------------------
@@ -414,7 +458,7 @@ _train_defaults = dict(
 )
 
 _visualize_defaults = dict(
-    num_steps_long=10,
+    num_steps_long=100,
     visualize_every_update=0, # Not used yet
 )
 
@@ -455,6 +499,10 @@ def main(source, data_args, model_args, optimizer_args, train_args,
                              num_steps_long=visualize_args['num_steps_long'],
                              **model_args)
     
+    inpaint_fn = compile_inpaint_chain(
+        inputs[0], inputs[1], gparams,
+        num_steps_long=visualize_args['num_steps_long'], **model_args)
+    
     def save(out_path=None, suffix=''):
         if out_path is None:
             return
@@ -464,8 +512,8 @@ def main(source, data_args, model_args, optimizer_args, train_args,
     
     try:
         logger.info('Training with args {}'.format(train_args))
-        train(train_fn, gen_fn, chain_fn, save, datasets, data_shapes,
-              **train_args)
+        train(train_fn, gen_fn, chain_fn, inpaint_fn, save, datasets,
+              data_shapes, **train_args)
     except KeyboardInterrupt:
         logger.info('Training interrupted')
         try:

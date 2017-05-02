@@ -21,7 +21,7 @@ logger = logging.getLogger('UDGAN.conv1')
 
 _defaults = dict(
     n_levels=3, dim_z=128, dim_h=128, dim_hd=512, multi_discriminator=True,
-    normalize_z=False
+    normalize_z=True
 )
 
 # INITIALIZE PARAMETERS ########################################################
@@ -242,10 +242,12 @@ def x_to_z(p, x, n_levels=3, dim_z=128, dim_h=128, dim_c=3, dim_x=32, dim_y=32,
         tparams=p, state_below=h, options={}, prefix='x_z_mu',
         activ='lambda x: x')
     out['mu'] = mu
+    
+    #log_sigma = T.minimum(log_sigma, 5.)
 
     eps = srng.normal(size=log_sigma.shape)
-    z = eps * T.exp(log_sigma) + mu
-    #z = eps * T.nnet.sigmoid(log_sigma) + mu # Old way
+    #z = eps * T.exp(log_sigma) + mu
+    z = eps * T.nnet.sigmoid(log_sigma) + mu # Old way
     out['z'] = z
 
     if normalize_z:
