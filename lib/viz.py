@@ -113,6 +113,8 @@ def plot_images(X, fname, title=""):
     X is expected to be a 4d tensor of dimensions [# images]x[# colors]x[height]x[width]
     """
     
+    '''
+    # Not sure we need any of this
     X = X.clip(0.0,1.0)
     
     if X.shape == (64,784):
@@ -124,6 +126,7 @@ def plot_images(X, fname, title=""):
         X = X.reshape((64,3,32,32))
     else:
         raise Exception("INVALID SHAPE OPTION")
+    '''
 
     ## plot
     # move color to end

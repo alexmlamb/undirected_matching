@@ -8,24 +8,46 @@ from fuel.datasets.hdf5 import H5PYDataset
 from fuel.schemes import ShuffledScheme, SequentialScheme
 from fuel.streams import DataStream
 from fuel.transformers import Transformer
+import numpy as np
+import theano
 
 
+floatX = theano.config.floatX
 logger = logging.getLogger('UDGAN.data')
 
 
 class Pad(Transformer):
-    def __init__(self, data_stream, **kwargs):
+    def __init__(self, data_stream, amount, **kwargs):
         super(Pad, self).__init__(data_stream=data_stream,
                                   produces_examples=False, **kwargs)
+        self.amount = amount
     
     def transform_batch(self, batch):
-        batch[0] = np.lib.pad(
-            batch[0], ((0, 0), (0, 0), (2, 2), (2, 2)), 'constant',
+        p = self.amount
+        x = np.lib.pad(
+            batch[0], ((0, 0), (0, 0), (p, p), (p, p)), 'constant',
             constant_values=(0))
-        return batch
+        batch = list(batch)
+        batch[0] = x
+        return tuple(batch)
 
 
-def load_stream(batch_size=None, source=None):
+class Rescale(Transformer):
+    def __init__(self, data_stream, min=0, max=1, **kwargs):
+        super(Rescale, self).__init__(data_stream=data_stream,
+                                  produces_examples=False, **kwargs)
+        self.min = min
+        self.max = max
+    
+    def transform_batch(self, batch):
+        x = float(self.max - self.min) * (batch[0] / 255.) - self.min
+        x = x.astype(floatX)
+        batch = list(batch)
+        batch[0] = x
+        return tuple(batch)
+
+
+def load_stream(batch_size=None, source=None, data_min=0, data_max=1):
     logger.info('Loading data from `{}`'.format(source))
     
     data_streams = {}
@@ -47,7 +69,8 @@ def load_stream(batch_size=None, source=None):
             shapes[i] = tuple(shape)
     
         scheme = ShuffledScheme(examples=examples, batch_size=batch_size)
-        stream = DataStream(dataset, iteration_scheme=scheme)
+        stream = Rescale(DataStream(dataset, iteration_scheme=scheme),
+                         min=data_min, max=data_max)
         data_streams[sets] = stream
         data_shapes[sets] = shapes
 

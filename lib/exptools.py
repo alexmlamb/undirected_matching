@@ -27,7 +27,7 @@ def make_argument_parser():
     parser.add_argument('-o', '--out_path', default=None,
                         help='Output path for stuff')
     parser.add_argument('-n', '--name', default=None)
-    parser.add_argument('-N', '--num_steps', default=3)
+    parser.add_argument('-c', '--config_file', default=None)
     parser.add_argument('-S', '--source', type=str, default=None)
     parser.add_argument('-v', '--verbosity', type=int, default=1,
                         help='Verbosity of the logging. (0, 1, 2)')

@@ -12,6 +12,7 @@ import gzip
 import cPickle as pickle
 import random
 import os
+from os import path
 import sys
 import time
 
@@ -28,7 +29,7 @@ from viz import plot_images
 
 logger = logging.getLogger('UDGAN')
 
-from data import load_stream
+from data import load_stream, Pad
 from exptools import make_argument_parser, setup_out_dir
 from loggers import set_stream_logger
 from loss import accuracy, crossent, lsgan_loss, wgan_loss
@@ -53,6 +54,7 @@ DIM_Z = None
 MODULE = None
 
 consider_constant = theano.gradient.disconnected_grad # changed from orginal
+
 
 def update_dict_of_lists(d_to_update, **d):
     '''Updates a dict of list with kwargs.
@@ -83,7 +85,7 @@ def print_section(s):
         s (str): string of section
 
     '''
-    h = s + ('-' * (_columns - len(head) - len(s)))
+    h = s + ('-' * (_columns - len(s)))
     print h
 
 # OPTIMIZER --------------------------------------------------------------------
@@ -100,17 +102,18 @@ def set_optimizer(dloss, gloss, dparams, gparams,
     
     if optimizer == 'rmsprop':
         dupdates = lasagne.updates.rmsprop(dloss, dparams.values(), **op_args)
-        gloss_grads = T.grad(gloss, gparams.values(),
-                             disconnected_inputs='ignore')
+        #gloss_grads = T.grad(gloss, gparams.values(),
+        #                     disconnected_inputs='ignore')
         # I don't think ignoring disconnected is a good idea.
-        gupdates = lasagne.updates.rmsprop(gloss_grads, gparams.values(),
-                                           **op_args)
+        # Actually, I don't even know what this is for
+        #gupdates = lasagne.updates.rmsprop(gloss_grads, gparams.values(),
+        #                                   **op_args)
         gcupdates = lasagne.updates.rmsprop(gloss, gparams.values(), **op_args)
     else:
         raise NotImplementedError(optimizer)
 
-    dgupdates = dupdates.copy()
-    dgupdates.update(gupdates)
+    #dgupdates = dupdates.copy()
+    #dgupdates.update(gupdates)
 
     dgcupdates = dupdates.copy()
     dgcupdates.update(gcupdates)
@@ -120,7 +123,7 @@ def set_optimizer(dloss, gloss, dparams, gparams,
 # COMPILE ----------------------------------------------------------------------
     
 def compile_train(updates, inputs, outputs):
-    logger.info("Compiling train functions")
+    logger.info("Compiling train function")
     f = theano.function(
         inputs=inputs, outputs=outputs, updates=updates,
         on_unused_input='ignore')
@@ -128,25 +131,36 @@ def compile_train(updates, inputs, outputs):
     return f
 
 
-def compile_generation(inputs):
-    pass
+def compile_generation(z, x):
+    logger.info("Compiling generation function")
+    f = theano.function([z], x)
+    return f
 
-def compile_chain():
-    pass
+
+def compile_chain(z, gparams, num_steps_long=None, **model_args):
+    logger.info("Compiling chain function")
+    p_lst_x_long, p_lst_z_long = p_chain(
+        gparams, z, num_steps_long, **model_args)
     
+    f = theano.function([z], outputs=p_lst_x_long)
+    
+    return f
+
+
+def compile_piecewise_chain(z, x, gparams, **model_args):
+    logger.info("Compiling piecewise chain function")
+    f_z_to_x = theano.function([z], outputs=onestep_z_to_x(gparams, z))
+    f_x_to_z = theano.function([x], outputs=onestep_x_to_z(gparams, x))
+    
+    return f_z_to_x, f_x_to_z
     
 # VIZ --------------------------------------------------------------------------
     
 def visualizer(num_steps_long=None):
-    p_lst_x_long, p_lst_z_long = p_chain(gparams, z_in, num_steps_long,
-                                         **model_args)
+    '''For eval, not for training.
     
-    get_pchain = theano.function([z_in], outputs=p_lst_x_long)
+    '''
     
-    func_z_to_x = theano.function([z_in], outputs=onestep_z_to_x(gparams, z_in))
-    func_x_to_z = theano.function([x_in], outputs=onestep_x_to_z(gparams, x_in))
-    
-    p_chain = get_pchain(z_in)
     for j in range(0, len(p_chain)):
         print "printing element of p_chain", j
         plot_images(
@@ -173,17 +187,20 @@ def p_chain(p, z, num_iterations, pd_steps=None, **model_args):
 
     for i in xrange(num_iterations):
         x = z_to_x(p, z, **model_args)
-        if i >= num_iterations - pd_steps - 1:
-            z = x_to_z(p, consider_constant(x), **model_args) # Changed this
-        else:
-            z = x_to_z(p, x, **model_args)
-        
         xlst.append(x)
-        zlst.append(z)
+
+        if i < num_iterations - 1:
+            if i == num_iterations - pd_steps - 1:
+                z = x_to_z(p, consider_constant(x), **model_args) # Changed this
+            else:
+                z = x_to_z(p, x, **model_args)
+            
+            zlst.append(z)
 
     for j in range(len(xlst)):
         xlst[j] = T.nnet.sigmoid(xlst[j])
-
+    
+    assert len(xlst) == len(zlst)
     return xlst, zlst
 
 
@@ -201,7 +218,7 @@ def q_chain(p, x, num_iterations, test=False, **model_args):
     x_to_z = MODULE.x_to_z
     xlst = [x]
     zlst = []
-    new_z = x_to_z(p, inverse_sigmoid(xlst[-1]), **model_args)
+    new_z = x_to_z(p, inverse_sigmoid(x), **model_args)
     zlst.append(new_z)
 
     return xlst, zlst
@@ -237,7 +254,7 @@ def make_model(num_steps=None, pd_steps=None, **model_args):
     D_p_lst = []
     for i in xrange(pd_steps):
         D_p_lst_, D_feat_p = MODULE.discriminator(
-            dparams, p_lst_x[-i], p_lst_z[-i], **model_args)
+            dparams, p_lst_x[-(i + 1)], p_lst_z[-(i + 1)], **model_args)
         D_p_lst += D_p_lst_
     D_q_lst, D_feat_q = MODULE.discriminator(
         dparams, q_lst_x[-1], q_lst_z[-1], **model_args)
@@ -251,7 +268,7 @@ def make_model(num_steps=None, pd_steps=None, **model_args):
         'p(fake)': (p_lst_x[-1] < 0.5).mean()
     }
 
-    return dloss, gloss, dparams, gparams, [x_in, z_in], results
+    return dloss, gloss, dparams, gparams, [x_in, z_in], results, p_lst_x
 
 # DATA -------------------------------------------------------------------------
 
@@ -262,6 +279,17 @@ def prepare_data(source, pad_to=None, batch_size=None, **kwargs):
     if source is None: raise ValueError('Source must be provided.')
     
     datasets, data_shapes = load_stream(source=source, batch_size=batch_size)
+    if pad_to is not None:
+        logger.info('Padding data to {}'.format(pad_to))
+        for k in datasets.keys():
+            data_shape = data_shapes[k][0]
+            dataset = datasets[k]
+            x_dim, y_dim = data_shape[2], data_shape[3]
+            p = (pad_to[0] - x_dim) // 2 # Some bugs could occur here.
+            datasets[k] = Pad(dataset, p)
+            data_shape = (data_shape[0], data_shape[1], pad_to[0], pad_to[1])
+            data_shapes[k] = tuple([data_shape] + list(data_shapes[k])[1:])
+
     shape = data_shapes['train'][0]
     
     logger.info('Setting DIM_X to {}, DIM_Y to {}, and DIM_C to {}'.format(
@@ -274,14 +302,14 @@ def prepare_data(source, pad_to=None, batch_size=None, **kwargs):
 
 # TRAIN ------------------------------------------------------------------------
 
-def train(train_fn, datasets, data_shapes, persist_p_chain=False,
-          latent_sparse=False, num_epochs=1000, blending_rate=0.5,
-          latent_sparse_num=128, batch_size=None):
+def train(train_fn, gen_fn, chain_fn, save_fn, datasets, data_shapes,
+          persist_p_chain=None, latent_sparse=None, num_epochs=None,
+          blending_rate=None, latent_sparse_num=None, batch_size=None,
+          binary_dir=None, image_dir=None, archive=None):
     '''Train method.
     
     '''
     
-    iterator = datasets['train'].get_epoch_iterator()
     train_samples = data_shapes['train'][0][0]
     z_out_p = None
     results = {}
@@ -294,6 +322,7 @@ def train(train_fn, datasets, data_shapes, persist_p_chain=False,
             widgets=widgets, maxval=(train_samples // batch_size)).start()
         
         e_results = {}
+        iterator = datasets['train'].get_epoch_iterator()
         
         for batch in iterator:
             x_in, label = batch
@@ -325,20 +354,44 @@ def train(train_fn, datasets, data_shapes, persist_p_chain=False,
             u += 1
             pbar.update(u)
             
+        # Results
         e_results = dict((k, np.mean(v)) for k, v in e_results.items())
-        update_list_of_dicts(results, **e_results)
+        update_dict_of_lists(results, **e_results)
         
         print_section('Epoch {} completed')
         logger.info('Epoch {} of {} took {:.3f}s'.format(
             epoch + 1, num_epochs, time.time() - start_time))
         logger.info(e_results)
+        
+        # Save
+        if archive:
+            suffix = '_{}'.format(epoch)
+        else:
+            suffix = ''
+        logger.debug('Saving to {}'.format(binary_dir))
+        save_fn(out_path=binary_dir, suffix=suffix)
+        
+        # Images
+        logger.debug('Saving images to {}'.format(image_dir))
+        z_im = rng.normal(size=(64, DIM_Z)).astype(floatX)
+        x_gen = gen_fn(z_im)
+        x_chain = chain_fn(z_im)
+        
+        plot_images(
+            x_gen, path.join(image_dir, 'gen_epoch_{}.png'.format(epoch)))
+        plot_images(x_in[:64], path.join(image_dir, 'gt.png'))
+        
+        for i, x_ in enumerate(x_chain):
+            plot_images(
+                x_, path.join(image_dir, 'gen_chain_{}.png'.format(i)))
+            
     
 # MAIN -------------------------------------------------------------------------
     
 _model_defaults = dict(
     num_steps=3,
-    pd_steps=2,
-    dim_z=100
+    pd_steps=1,
+    dim_z=128
 )
 
 _optimizer_defaults = dict(
@@ -347,7 +400,8 @@ _optimizer_defaults = dict(
 )
 
 _data_defaults = dict(
-    batch_size=53
+    batch_size=64,
+    pad_to=(32, 32)
 )
 
 _train_defaults = dict(
@@ -355,7 +409,13 @@ _train_defaults = dict(
     latent_sparse=False,
     blending_rate=0.5,
     latent_sparse_num=128,
-    num_epochs=1000
+    num_epochs=1000,
+    archive=False
+)
+
+_visualize_defaults = dict(
+    num_steps_long=10,
+    visualize_every_update=0, # Not used yet
 )
 
 
@@ -375,7 +435,8 @@ def test():
     assert False, d
     
 
-def main(source, data_args, model_args, optimizer_args, train_args):
+def main(source, data_args, model_args, optimizer_args, train_args,
+         visualize_args):
     global DIM_Z
     DIM_Z = model_args['dim_z']
     
@@ -384,20 +445,42 @@ def main(source, data_args, model_args, optimizer_args, train_args):
     
     logger.info("Forming model with args {}".format(model_args))
     
-    dloss, gloss, dparams, gparams, inputs, results = make_model(**model_args)
+    dloss, gloss, dparams, gparams, inputs, results, x_chain = make_model(
+        **model_args)
     updates = set_optimizer(dloss, gloss, dparams, gparams, **optimizer_args)
     
     train_fn = compile_train(updates, inputs, results)
+    gen_fn = compile_generation(inputs[1], x_chain[-1])
+    chain_fn = compile_chain(inputs[1], gparams,
+                             num_steps_long=visualize_args['num_steps_long'],
+                             **model_args)
+    
+    def save(out_path=None, suffix=''):
+        if out_path is None:
+            return
+        
+        np.savez(path.join(out_path, 'g_params{}.npz'.format(suffix)), gparams)
+        np.savez(path.join(out_path, 'd_params{}.npz'.format(suffix)), dparams)
     
     try:
         logger.info('Training with args {}'.format(train_args))
-        train(train_fn, datasets, data_shapes, **train_args)
+        train(train_fn, gen_fn, chain_fn, save, datasets, data_shapes,
+              **train_args)
     except KeyboardInterrupt:
         logger.info('Training interrupted')
         try:
             sys.exit(0)
         except SystemExit:
-            os._exit(0)    
+            os._exit(0)
+            
+
+def config(data_args, model_args, optimizer_args, train_args, visualizer_args,
+           config_file=None):
+    if config_file is None:
+        return
+    
+    raise NotImplementedError() # load yaml, update args with config dicts.
+
     
 if __name__ == '__main__':
     MODULE = conv1
@@ -419,7 +502,15 @@ if __name__ == '__main__':
     train_args = {}
     train_args.update(**_train_defaults)
     train_args['batch_size'] = data_args['batch_size']
+    train_args.update(**out_paths)
     
-    main(args.source, data_args, model_args, optimizer_args, train_args)
+    visualize_args = {}
+    visualize_args.update(**_visualize_defaults)
+    
+    config(data_args, model_args, optimizer_args, train_args, visualize_args,
+           config_file=args.config_file)
+    
+    main(args.source, data_args, model_args, optimizer_args, train_args,
+         visualize_args)
     
 

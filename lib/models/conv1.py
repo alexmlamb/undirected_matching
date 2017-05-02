@@ -20,7 +20,8 @@ from utils import init_tparams, join2, srng
 logger = logging.getLogger('UDGAN.conv1')
 
 _defaults = dict(
-    n_levels=2, dim_z=128, dim_h=128, dim_hd=512, multi_discriminator=True
+    n_levels=3, dim_z=128, dim_h=128, dim_hd=512, multi_discriminator=True,
+    normalize_z=False
 )
 
 # INITIALIZE PARAMETERS ########################################################
@@ -180,7 +181,7 @@ def z_to_x(p, z, n_levels=3, dim_h=128, dim_x=32, dim_y=32,
     scale = 2 ** n_levels
     d = OrderedDict()
     
-    logger.info("Added extra noise input")
+    logger.debug("Added extra noise input")
     z = T.concatenate([z, srng.normal(size=z.shape)], axis=1)
     d['z'] = z
     logger.debug('Forming layer with name {}'.format('z_x_ff'))
@@ -244,12 +245,13 @@ def x_to_z(p, x, n_levels=3, dim_z=128, dim_h=128, dim_c=3, dim_x=32, dim_y=32,
 
     eps = srng.normal(size=log_sigma.shape)
     z = eps * T.exp(log_sigma) + mu
+    #z = eps * T.nnet.sigmoid(log_sigma) + mu # Old way
     out['z'] = z
 
     if normalize_z:
         logger.debug('Normalizing z')
         z = (z - T.mean(z, axis=0, keepdims=True)) / (
-            epsilon + T.std(z, axis=0, keepdims=True))
+            1e-6 + T.std(z, axis=0, keepdims=True))
         out['z_norm'] = z
 
     if return_tensors:
