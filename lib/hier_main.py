@@ -229,9 +229,9 @@ def discriminator(p,x,z1,z2):
     print "turned off none of D"
     return [D1,D2,D3,D4,D5,D6], h3
 
-def p_chain(p, num_iterations):
+def p_chain(p, x_initial, num_iterations):
 
-    x_initial = srng.normal(size = (64,3*32*32))
+    #x_initial = srng.normal(size = (64,3*32*32))
     z2_initial = srng.normal(size = (64,128))
 
     z1_lst = []
@@ -284,11 +284,11 @@ dparams = init_dparams({})
 
 x_in = T.matrix()
 
-p_lst_x,p_lst_z1,p_lst_z2 = p_chain(gparams, num_steps)
+p_lst_x,p_lst_z1,p_lst_z2 = p_chain(gparams, x_in, num_steps)
 
 q_lst_x,q_lst_z1,q_lst_z2 = q_chain(gparams, x_in, num_steps)
 
-p_lst_x_long,p_lst_z1_long,p_lst_z2_long = p_chain(gparams, 19)
+p_lst_x_long,p_lst_z1_long,p_lst_z2_long = p_chain(gparams, x_in, 19)
 
 
 print p_lst_x

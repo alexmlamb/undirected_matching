@@ -39,11 +39,11 @@ def create_log_dir(suffix, model_id):
     return model_dir
 
 
-def merge_images(img1,img2):
+def merge_images(img1,img2,cutoff=16):
     i1 = img1.reshape((64,3,32,32))
     i2 = img2.reshape((64,3,32,32))
 
-    new_img = np.concatenate([i1[:,:,:,0:16], i2[:,:,:,16:32]], axis = 3)
+    new_img = np.concatenate([i1[:,:,:,0:cutoff], i2[:,:,:,cutoff:32]], axis = 3)
 
     return new_img.reshape((64,32*32*3))
 

@@ -66,7 +66,7 @@ elif dataset == "svhn":
 
     svhnData = SvhnData(mb_size=64,segment="train")
 
-nl = 128
+nl = 512
 #128 works for nl
 nfg = 512
 nfd = 512
@@ -83,7 +83,7 @@ print "train classifier separate", train_classifier_separate
 #skip_conn = True
 #print "skip conn", skip_conn
 
-latent_sparse = False
+latent_sparse = True
 print "latent sparse", latent_sparse
 
 persist_p_chain = False
@@ -204,9 +204,11 @@ def p_chain(p, z, num_iterations):
     xlst = []
 
     if num_iterations == 1:
-        new_z, new_x = transition(p, zlst[-1])
-        zlst.append(new_z)
+        
+        new_x = z_to_x(p, zlst[-1])
         xlst.append(new_x)
+        #new_z = x_to_z(p, xlst[-1])
+        #zlst.append(new_z)
 
     elif num_iterations == 3:  
 
@@ -276,11 +278,12 @@ print q_lst_x
 print q_lst_z
 
 D_p_lst_1,D_feat_p_1 = discriminator(dparams, p_lst_x[-1], p_lst_z[-1])
-D_p_lst_2,D_feat_p_2 = discriminator(dparams, p_lst_x[-2], p_lst_z[-2])
 
-D_p_lst = D_p_lst_1 + D_p_lst_2
+#D_p_lst_2,D_feat_p_2 = discriminator(dparams, p_lst_x[-2], p_lst_z[-2])
 
-print "using double disc"
+D_p_lst = D_p_lst_1# + D_p_lst_2
+
+print "using single disc"
 
 D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
 
