@@ -352,9 +352,12 @@ def train(train_fn, gen_fn, chain_fn, inpaint_fn, save_fn, datasets,
         
         e_results = {}
         iterator = datasets['train'].get_epoch_iterator()
+        x_in_ = None
         
         for batch in iterator:
             x_in, label = batch
+            if x_in_ is None:
+                x_in_ = x_in
             if batch_size is None:
                 batch_size = x_in.shape[0]
             
@@ -405,11 +408,11 @@ def train(train_fn, gen_fn, chain_fn, inpaint_fn, save_fn, datasets,
         z_im = rng.normal(size=(64, DIM_Z)).astype(floatX)
         x_gen = gen_fn(z_im)
         x_chain = chain_fn(z_im)
-        inpaint_chain = inpaint_fn(x_in[:64], z_im)
+        inpaint_chain = inpaint_fn(x_in_[:64], z_im)
         
         plot_images(
             x_gen, path.join(image_dir, 'gen_epoch_{}.png'.format(epoch)))
-        plot_images(x_in[:64], path.join(image_dir, 'gt.png'))
+        plot_images(x_in_[:64], path.join(image_dir, 'gt.png'))
         
         chain = []
         for x in inpaint_chain:
@@ -458,7 +461,7 @@ _train_defaults = dict(
 )
 
 _visualize_defaults = dict(
-    num_steps_long=100,
+    num_steps_long=20,
     visualize_every_update=0, # Not used yet
 )
 
