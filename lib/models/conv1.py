@@ -1,21 +1,62 @@
-'''Convolutional model
+'''Convolutional model.
+
+This model convolves / transpose convolves by effectively halving / doubling
+the input. Latent variables z are Gaussian and each z is sampled from parameters
+which are produced by x-z. In addition, noise is added to z-x through
+concatenation. Finally, there is an option to use multiple discriminator scores.
 
 '''
 
-from nn_layers import param_init_fflayer, param_init_convlayer
+from collections import OrderedDict
+import logging
 
+from theano import tensor as T
+
+from nn_layers import (
+    fflayer, convlayer, param_init_fflayer, param_init_convlayer)
+from utils import init_tparams, join2, srng
+
+
+logger = logging.getLogger('UDGAN.conv1')
+
+_defaults = dict(
+    n_levels=2, dim_z=128, dim_h=128, dim_hd=512, multi_discriminator=True
+)
 
 # INITIALIZE PARAMETERS ########################################################
 
 def init_gparams(p, n_levels=3, dim_z=128, dim_h=128, dim_c=3, dim_x=32,
-                 dim_y=32):
-    scale = 2 ** (n_levels)
-    dim_in = dim_z * 2
-    dim_out = dim_h
+                 dim_y=32, **kwargs):
+    '''Initialize the generator parameters.
     
+    '''
+    logger.info('Initializing generator parameters.')
+    
+    scale = 2 ** (n_levels)
+    
+    if not (dim_x / float(scale)).is_integer():
+        logger.error(
+            'X dim will not divide evenly with number of convolutional layers.')
+        raise TypeError('X dim will not divide evenly with number of '
+                        'convolutional layers. ({})'.format(
+                            dim_x / float(scale)))
+    
+    if not (dim_y / float(scale)).is_integer():
+        logger.error(
+            'Y dim will not divide evenly with number of convolutional layers.')
+        raise TypeError('Y dim will not divide evenly with number of '
+                        'convolutional layers. ({})'.format(
+                            dim_y / float(scale)))
+
+    dim_in = dim_z * 2
+    dim_out = dim_h * scale // 2
+    
+    logger.debug('Generator z-x dim in / out: {}-{}'.format(
+            dim_in, dim_out * dim_x // scale * dim_y // scale))
     p = param_init_fflayer(
         options={}, params=p, prefix='z_x_ff', nin=dim_in,
-        nout=dim_out * dim_x * dim_y // scale, ortho=False, batch_norm=True)
+        nout=dim_out * dim_x // scale * dim_y // scale, ortho=False,
+        batch_norm=True)
 
     dim_in = dim_out
     for level in xrange(n_levels):
@@ -53,25 +94,32 @@ def init_gparams(p, n_levels=3, dim_z=128, dim_h=128, dim_c=3, dim_x=32,
 
     p = param_init_fflayer(
         options={}, params=p, prefix='x_z_mu',
-        nin=dim_h * dim_x * dim_y // scale, nout=dim_z, ortho=False,
+        nin=dim_h * dim_x * dim_y // scale // 2, nout=dim_z, ortho=False,
         batch_norm=False)
 
     p = param_init_fflayer(
         options={}, params=p, prefix='x_z_logsigma',
-        nin=dim_h * dim_x * dim_y // scale, nout=dim_z, ortho=False,
+        nin=dim_h * dim_x * dim_y // scale // 2, nout=dim_z, ortho=False,
         batch_norm=False)
 
     return init_tparams(p)
 
 
 def init_dparams(p, n_levels=3, dim_z=128, dim_h=128, dim_hd=512, dim_c=3,
-                 dim_x=32, dim_y=32, multi_discriminator=True):
+                 dim_x=32, dim_y=32, multi_discriminator=True, **kwargs):
+    '''Initialize the discriminator parameters.
+    
+    '''
+
+    logger.info('Initializing discriminator parameters.')
+    if multi_discriminator:
+        logger.info('Forming parameters for multiple scores.')
+    
     dim_in = dim_c
-    scale = 2 ** (n_levels)
+    scale = 2 ** n_levels
 
     for level in xrange(n_levels):
         name = 'd_conv_{}'.format(level)
-        name_out = 'd_conv_out_{}'.format(level)
         
         if level == 0:
             dim_out = dim_h
@@ -86,29 +134,33 @@ def init_dparams(p, n_levels=3, dim_z=128, dim_h=128, dim_hd=512, dim_c=3,
             kernel_len=5, batch_norm=False)
 
         if multi_discriminator:
+            name_out = 'd_conv_out_{}'.format(level)
             p = param_init_convlayer(
                 options={}, params=p, prefix=name_out, nin=dim_out, nout=1,
                 kernel_len=5, batch_norm=False)
 
         dim_in = dim_out
 
-    for level in xrange(0, n_levels):
+    for level in xrange(n_levels):
         name = 'd_ff_{}'.format(level)
-        name_out = 'd_ff_out_{}'.format(level)
 
         if level == 0:
-            dim_in = dim_z + dim_h * dim_x * dim_y // scale
+            dim_in = dim_z + dim_h * scale * dim_x // scale * dim_y // scale // 2
         
         if level == n_levels - 1:
             dim_out = 1
         else:
-            dim_out = dim_hg
+            dim_out = dim_hd
+            
+        logger.debug('Discriminator ff dim in / out: {}-{}'.format(
+            dim_in, dim_out))
         
-        p = param_init_ff_layer(
+        p = param_init_fflayer(
             options={}, params=p, prefix=name, nin=dim_in, nout=dim_out,
             ortho=False, batch_norm=False)
 
         if multi_discriminator or level == n_levels - 1:
+            name_out = 'd_ff_out_{}'.format(level)
             p = param_init_fflayer(
                 options={}, params=p, prefix=name_out, nin=dim_out, nout=1,
                 ortho=False, batch_norm=False)
@@ -120,19 +172,29 @@ def init_dparams(p, n_levels=3, dim_z=128, dim_h=128, dim_hd=512, dim_c=3,
 
 # MODELS #######################################################################
 
-def z_to_x(p, z):
+def z_to_x(p, z, n_levels=3, dim_h=128, dim_x=32, dim_y=32,
+           return_tensors=False, **kwargs):
+    '''z to x transition.
+    
+    '''
+    scale = 2 ** n_levels
+    d = OrderedDict()
+    
     logger.info("Added extra noise input")
-    z = join2(z, srng.normal(size=z.shape))
-
+    z = T.concatenate([z, srng.normal(size=z.shape)], axis=1)
+    d['z'] = z
+    logger.debug('Forming layer with name {}'.format('z_x_ff'))
     x = fflayer(
         tparams=p, state_below=z, options={}, prefix='z_x_ff',
         activ='lambda x: tensor.nnet.relu(x, alpha=0.02)')
+    d['x0'] = x
 
-    x = x.reshape((batch_size, dim_h, dim_x // scale, dim_y // scale))
+    x = x.reshape((-1, dim_h * scale // 2, dim_x // scale, dim_y // scale))
+    d['x0_rs'] = x
 
     for level in xrange(n_levels):
         name = 'z_x_conv_{}'.format(level)
-        
+        logger.debug('Forming layer with name {}'.format(name))
         if level == n_levels - 1:
             activ = 'lambda x: x'
         else:
@@ -141,96 +203,113 @@ def z_to_x(p, z):
         x = convlayer(
             tparams=p, state_below=x, options={}, prefix=name,
             activ=activ, stride=-2)
+        d['x{}'.format(level + 1)] = x
 
-    x = x.flatten(2)
+    if return_tensors:
+        return d
+    else:
+        return x
 
-    return x
 
-
-def x_to_z(p, x):
-    h = x.reshape((batch_size, dim_c, dim_x, dim_y))
+def x_to_z(p, x, n_levels=3, dim_z=128, dim_h=128, dim_c=3, dim_x=32, dim_y=32,
+           normalize_z=False, return_tensors=False, **kwargs):
+    '''x to z transition.
+    
+    '''
+    out = OrderedDict()
+    h = x.reshape((-1, dim_c, dim_x, dim_y))
 
     for level in xrange(n_levels):
         name = 'x_z_conv_{}'.format(level)
+        logger.debug('Forming layer with name {}'.format(name))
         activ = 'lambda x: tensor.nnet.relu(x, alpha=0.02)'
         h = convlayer(
             tparams=p, state_below=h, options={}, prefix=name, activ=activ,
             stride=2)
+        out['h{}'.format(level)] = h
 
     h = h.flatten(2)
 
+    logger.debug('Forming layer with name {}'.format('x_z_logsigma'))
     log_sigma = fflayer(
         tparams=p, state_below=h, options={}, prefix='x_z_logsigma',
         activ='lambda x: x')
+    out['logsigma'] = log_sigma
 
+    logger.debug('Forming layer with name {}'.format('x_z_mu'))
     mu = fflayer(
         tparams=p, state_below=h, options={}, prefix='x_z_mu',
         activ='lambda x: x')
+    out['mu'] = mu
 
-    eps = srng.normal(size=sigma.shape)
+    eps = srng.normal(size=log_sigma.shape)
     z = eps * T.exp(log_sigma) + mu
+    out['z'] = z
 
     if normalize_z:
+        logger.debug('Normalizing z')
         z = (z - T.mean(z, axis=0, keepdims=True)) / (
             epsilon + T.std(z, axis=0, keepdims=True))
+        out['z_norm'] = z
 
-    return z
+    if return_tensors:
+        return out
+    else:
+        return z
 
 
-def discriminator(p, x, z):
-    h = x.reshape((batch_size, dim_c, dim_x, dim_y))
+def discriminator(p, x, z, n_levels=3, dim_z=128, dim_h=128, dim_hd=512,
+                  dim_c=3, dim_x=32, dim_y=32, multi_discriminator=True,
+                  return_tensors=False, **kwargs):
+    '''Discriminator function.
+    
+    '''
+    if multi_discriminator:
+        logger.info('Using mutliple scores for the discriminator.')
+    else:
+        logger.info('Using single score.')
+    outs = OrderedDict()
+    
+    h = x.reshape((-1, dim_c, dim_x, dim_y))
+    outs['h0'] = h
     activ = 'lambda x: tensor.nnet.relu(x, alpha=0.02)'
 
+    ds = []
     for level in xrange(n_levels):
+        name = 'd_conv_{}'.format(level)
+        logger.debug('Forming layer with name {}'.format(name))
         h = convlayer(
-            tparams=p, state_below=h, options={},
-            prefix='DC_1', activ=activ, stride=2)
+            tparams=p, state_below=h, options={}, prefix=name, activ=activ,
+            stride=2)
+        outs['h_conv_{}'.format(level)] = h
+        
+        if multi_discriminator:
+            name_out = 'd_conv_out_{}'.format(level)
+            d = convlayer(
+                tparams=p, state_below=h, options={}, prefix=name_out,
+                activ='lambda x: x', stride=2)
+            ds.append(d)
+            outs['d_conv_{}'.format(level)] = d
+    outs['hf'] = h.flatten(2)
+    outs['z'] = z
+    h = T.concatenate([z, h.flatten(2)], axis=1)
+    outs['h1'] = h
 
-    dc_2 = convlayer(
-        tparams=p, state_below=dc_1, options={}, prefix='DC_2',
-        activ='lambda x: tensor.nnet.relu(x, alpha=0.02)', stride=2)
-
-    dc_3 = convlayer(
-        tparams=p, state_below=dc_2, options={}, prefix='DC_3',
-        activ='lambda x: tensor.nnet.relu(x, alpha=0.02)', stride=2)
-
-    inp = join2(z, dc_3.flatten(2))
-
-    h1 = fflayer(
-        tparams=p, state_below=inp, options={}, prefix='D_1',
-        activ='lambda x: tensor.nnet.relu(x, alpha=0.02)', mean_ln=False)
-
-    h2 = fflayer(
-        tparams=p, state_below=h1, options={}, prefix='D_2',
-        activ='lambda x: tensor.nnet.relu(x, alpha=0.02)', mean_ln=False)
-
-    h3 = fflayer(
-        tparams=p, state_below=h2, options={}, prefix='D_3',
-        activ='lambda x: tensor.nnet.relu(x, alpha=0.02)', mean_ln=False)
-
-    D1 = fflayer(
-        tparams=p, state_below=h1, options={}, prefix='D_o_1',
-        activ='lambda x: x')
-
-    D2 = fflayer(
-        tparams=p, state_below=h2, options={}, prefix='D_o_2',
-        activ='lambda x: x')
-
-    D3 = fflayer(
-        tparams=p, state_below=h3, options={}, prefix='D_o_3',
-        activ='lambda x: x')
-
-    D4 = convlayer(
-        tparams=p, state_below=dc_1, options={}, prefix='D_o_4',
-        activ='lambda x: x', stride=2)
-
-    D5 = convlayer(
-        tparams=p, state_below=dc_2, options={}, prefix='D_o_5',
-        activ='lambda x: x', stride=2)
-
-    D6 = convlayer(
-        tparams=p, state_below=dc_3, options={}, prefix='D_o_6',
-        activ='lambda x: x', stride=2)
-
-    logger.info("special thing in D (devon: what does this mean?)")
-    return [D1, D2, D3, D4, D5, D6], h3
+    for level in xrange(n_levels):
+        name = 'd_ff_{}'.format(level)
+        logger.debug('Forming layer with name {}'.format(name))
+        h = fflayer(
+            tparams=p, state_below=h, options={}, prefix=name, activ=activ,
+            mean_ln=False)
+        outs['h_ff_{}'.format(level)] = h
+        if multi_discriminator or level == n_levels - 1:
+            name_out = 'd_ff_out_{}'.format(level)
+            d = fflayer(
+                tparams=p, state_below=h, options={}, prefix=name_out,
+                activ='lambda x: x')
+            ds.append(d)
+            outs['d_ff_{}'.format(level)] = d
+    if return_tensors:
+        return outs
+    else:
+        return ds, h

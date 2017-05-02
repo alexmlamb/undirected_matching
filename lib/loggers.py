@@ -4,8 +4,8 @@
 
 import logging
 
-logging.basicConfig()
-logger = logging.getLogger(__name__)
+logging.basicConfig(disable_existing_loggers=False)
+logger = logging.getLogger('UDGAN')
 logger.propagate = False
 file_formatter = logging.Formatter(
     '%(asctime)s:%(name)s[%(levelname)s]:%(message)s')
@@ -28,13 +28,13 @@ def set_stream_logger(verbosity):
     else:
         level = logging.INFO
         lstr = 'INFO'
-        logger.setLevel(level)
-        ch = logging.StreamHandler()
-        ch.terminator = ''
-        ch.setLevel(level)
-        ch.setFormatter(stream_formatter)
-        logger.addHandler(ch)
-        logger.info('Setting logging to %s' % lstr)
+    logger.setLevel(level)
+    ch = logging.StreamHandler()
+    ch.terminator = ''
+    ch.setLevel(level)
+    ch.setFormatter(stream_formatter)
+    logger.addHandler(ch)
+    logger.info('Setting logging to %s' % lstr)
 
 
 def set_file_logger(file_path):
