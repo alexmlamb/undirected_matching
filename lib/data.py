@@ -23,12 +23,13 @@ class Pad(Transformer):
         self.amount = amount
     
     def transform_batch(self, batch):
+        index = self.sources.index('features')
         p = self.amount
         x = np.lib.pad(
-            batch[0], ((0, 0), (0, 0), (p, p), (p, p)), 'constant',
+            batch[index], ((0, 0), (0, 0), (p, p), (p, p)), 'constant',
             constant_values=(0))
         batch = list(batch)
-        batch[0] = x
+        batch[index] = x
         return tuple(batch)
 
 
@@ -40,11 +41,24 @@ class Rescale(Transformer):
         self.max = max
     
     def transform_batch(self, batch):
-        x = float(self.max - self.min) * (batch[0] / 255.) - self.min
+        index = self.sources.index('features')
+        x = float(self.max - self.min) * (batch[index] / 255.) - self.min
         x = x.astype(floatX)
         batch = list(batch)
-        batch[0] = x
+        batch[index] = x
         return tuple(batch)
+    
+    
+class OneHot(Transformer):
+    def __init__(self, data_stream, n_classes, **kwargs):
+        super(OneHot, self).__init__(data_stream=data_stream,
+                                     produces_examples=False, **kwargs)
+        self.n_classes = n_classes
+    
+    def transform_batch(self, batch):
+        index = self.sources.index('labels')
+        labels = batch[index]
+        
 
 
 def load_stream(batch_size=None, source=None, data_min=0, data_max=1):

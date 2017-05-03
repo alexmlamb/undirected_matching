@@ -1,3 +1,6 @@
+
+import logging
+
 import theano
 from theano import tensor
 import theano.tensor as T
@@ -15,6 +18,7 @@ from theano.sandbox.cuda.dnn import GpuDnnConvDesc, GpuDnnConv, GpuDnnConvGradI,
 
 import settings
 profile = settings.profile
+logger = logging.getLogger('UDGAN.layer')
 
 
 # layers: 'name': ('parameter initializer', 'feedforward')
@@ -78,7 +82,7 @@ def param_init_convlayer(options,params,prefix='ff',nin=None,nout=None,kernel_le
     return params
 
 def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor.tanh(x)',stride=None):
-
+    logger.debug('Forming layer with name {}'.format(prefix))
     #print "kernel shape", tparams[prefix+"_W"].get_value().shape[2]
 
     kernel_shape = tparams[prefix+"_W"].get_value().shape[2]
@@ -141,6 +145,7 @@ def fflayer(tparams,
             activ='lambda x: tensor.tanh(x)',
             weight_norm = False,
             **kwargs):
+    logger.debug('Forming layer with name {}'.format(prefix))
     preactivation = tensor.dot(state_below, tparams[prefix + '_W']) +tparams[prefix + '_b']
 
     if prefix + "_newmu" in tparams:

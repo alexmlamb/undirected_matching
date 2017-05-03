@@ -62,8 +62,17 @@ def wgan_loss(D_q_lst, D_p_lst):
         gloss += T.mean(D_p) + T.mean(-1.0 * D_q)
 
     return dloss / len(D_q_lst), gloss / len(D_q_lst)
-    
 
+def bgan_loss(D_q_lst, D_p_lst):
+    dloss = 0.0
+    gloss = 0.0
+    
+    for D_q, D_p in zip(D_q_lst, D_p_lst):
+        dloss += (T.nnet.softplus(-D_q)).mean() + (
+        T.nnet.softplus(-D_p)).mean() + D_p.mean()
+        gloss += (D_p ** 2).mean() + (D_q ** 2).mean()
+        
+    return dloss / len(D_q_lst), gloss / len(D_q_lst)
 
 if __name__ == "__main__":
 

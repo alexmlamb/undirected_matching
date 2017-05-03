@@ -33,7 +33,7 @@ from data import load_stream, Pad
 from exptools import make_argument_parser, setup_out_dir
 import imageio
 from loggers import set_stream_logger
-from loss import accuracy, crossent, lsgan_loss, wgan_loss
+from loss import accuracy, crossent, bgan_loss, lsgan_loss, wgan_loss
 from models import conv1
 from nn_layers import fflayer, convlayer
 from progressbar import Bar, ProgressBar, Percentage, Timer
@@ -103,13 +103,10 @@ def set_optimizer(dloss, gloss, dparams, gparams,
     
     if optimizer == 'rmsprop':
         dupdates = lasagne.updates.rmsprop(dloss, dparams.values(), **op_args)
-        #gloss_grads = T.grad(gloss, gparams.values(),
-        #                     disconnected_inputs='ignore')
-        # I don't think ignoring disconnected is a good idea.
-        # Actually, I don't even know what this is for
-        #gupdates = lasagne.updates.rmsprop(gloss_grads, gparams.values(),
-        #                                   **op_args)
         gcupdates = lasagne.updates.rmsprop(gloss, gparams.values(), **op_args)
+    elif optimizer == 'adam':
+        dupdates = lasagne.updates.adam(dloss, dparams.values(), **op_args)
+        gcupdates = lasagne.updates.adam(gloss, gparams.values(), **op_args)
     else:
         raise NotImplementedError(optimizer)
 
@@ -140,7 +137,7 @@ def compile_generation(z, x):
 
 def compile_chain(z, gparams, num_steps_long=None, **model_args):
     logger.info("Compiling chain function")
-    p_lst_x_long, p_lst_z_long = p_chain(
+    p_lst_x_long, p_lst_y_long, p_lst_z_long = p_chain(
         gparams, z, num_steps_long, **model_args)
     
     f = theano.function([z], outputs=p_lst_x_long)
@@ -170,41 +167,43 @@ def compile_piecewise_chain(z, x, gparams, **model_args):
 def visualizer(num_steps_long=None):
     '''For eval, not for training.
     
-    '''
+    TODO
     
-    for j in range(0, len(p_chain)):
-        print "printing element of p_chain", j
-        plot_images(
-            p_chain[j], "plots/" + slurm_name + "_pchain_" + str(j) +
-            ".png")
-
-    new_z = rng.normal(size=(64, nl)).astype('float32')
-    for j in range(0, len(p_chain)):
-        new_x = func_z_to_x(new_z)
-        new_x = merge_images(new_x, x_in)
-        new_z = func_x_to_z(new_x)
-        plot_images(
-            new_x,
-            "plots/" + slurm_name +
-            "_inpainting_" + str(j) + ".png") 
+    '''
+    pass
 
 # MODELS -----------------------------------------------------------------------
 
 def p_chain(p, z, num_iterations, pd_steps=None, **model_args):
     z_to_x = MODULE.z_to_x
     x_to_z = MODULE.x_to_z
+
     zlst = [z]
+    ylst = []
     xlst = []
 
     for i in xrange(num_iterations):
-        x = z_to_x(p, z, **model_args)
+        out = z_to_x(p, z, **model_args)
+        
+        if MODULE._semi_supervised:
+            x, y = out
+            ylst.append(y)
+        else:
+            x = out
+            
         xlst.append(x)
 
         if i < num_iterations - 1:
-            if i == num_iterations - pd_steps - 1:
-                z = x_to_z(p, consider_constant(x), **model_args) # Changed this
+            if MODULE._semi_supervised:
+                if i == num_iterations - pd_steps - 1:
+                    z = x_to_z(p, consider_constant(x), y, **model_args) # Changed this
+                else:
+                    z = x_to_z(p, x, y, **model_args)
             else:
-                z = x_to_z(p, x, **model_args)
+                if i == num_iterations - pd_steps - 1:
+                    z = x_to_z(p, consider_constant(x), **model_args) # Changed this
+                else:
+                    z = x_to_z(p, x, **model_args)
             
             zlst.append(z)
 
@@ -212,7 +211,23 @@ def p_chain(p, z, num_iterations, pd_steps=None, **model_args):
         xlst[j] = T.nnet.sigmoid(xlst[j])
     
     assert len(xlst) == len(zlst)
-    return xlst, zlst
+    return xlst, ylst, zlst
+
+
+def q_chain(p, x, y, num_iterations, test=False, **model_args):
+    x_to_z = MODULE.x_to_z
+    xlst = [x]
+    ylst = [y]
+    zlst = []
+    
+    if MODULE._semi_supervised:
+        new_z = x_to_z(p, inverse_sigmoid(x), y)
+    else:
+        new_z = x_to_z(p, inverse_sigmoid(x), **model_args)
+        
+    zlst.append(new_z)
+
+    return xlst, ylst, zlst
 
 
 def inpaint_chain(p, x, z, num_iterations, **model_args):
@@ -222,10 +237,20 @@ def inpaint_chain(p, x, z, num_iterations, **model_args):
     xlst = [x_gt]
     
     for i in xrange(num_iterations):
-        x = z_to_x(p, z, **model_args)
+        out = z_to_x(p, z, **model_args)
+        
+        if MODULE._semi_supervised:
+            x, y = out
+        else:
+            x = out
+            
         x = T.set_subtensor(x[:, :, :DIM_X // 2, :], x_gt[:, :, :DIM_X // 2, :])
         xlst.append(x)
-        z = x_to_z(p, x, **model_args)
+        
+        if MODULE._semi_supervised:
+            z = x_to_z(p, x, y, **model_args)
+        else:
+            z = x_to_z(p, x, **model_args)
 
     for j in range(len(xlst)):
         xlst[j] = T.nnet.sigmoid(xlst[j])
@@ -233,27 +258,57 @@ def inpaint_chain(p, x, z, num_iterations, **model_args):
     return xlst
 
 
+def inpaint_labels(p, x, z, num_iterations, **model_args):
+    if not MODULE._semi_supervised:
+        return None
+    z_to_x = MODULE.z_to_x
+    x_to_z = MODULE.x_to_z
+    x_gt = inverse_sigmoid(x)
+    ylst = []
+    
+    for i in xrange(num_iterations):
+        x, y = z_to_x(p, z, **model_args)
+        ylst.append(y)
+        z = x_to_z(p, x_gt, y, **model_args)
+        
+    return ylst
+
+
+def inpaint_images(p, y, z, num_iterations, **model_args):
+    if not MODULE._semi_supervised:
+        return None
+    z_to_x = MODULE.z_to_x
+    x_to_z = MODULE.x_to_z
+    y_gt = y
+    xlst = []
+    
+    for i in xrange(num_iterations):
+        x, y = z_to_x(p, z, **model_args)
+        xlst.append(x)
+        z = x_to_z(p, x, y_gt, **model_args)
+        
+    return xlst
+
+
 def onestep_z_to_x(p, z, **model_args):
-    x = T.nnet.sigmoid(MODULE.z_to_x(p, z, **model_args))
+    out = MODULE.z_to_x(p, z, **model_args)
+    if MODULE._semi_supervised:
+        x, y = out
+    else:
+        x = out
+    x = T.nnet.sigmoid(x)
     return x
 
 
-def onestep_x_to_z(p, x, **model_args):
-    new_z = x_to_z(p, inverse_sigmoid(x), **model_args)
+def onestep_x_to_z(p, x, y, **model_args):
+    if MODULE._semi_supervised:
+        new_z = x_to_z(p, inverse_sigmoid(x), y, **model_args)
+    else:
+        new_z = x_to_z(p, inverse_sigmoid(x), **model_args)
     return new_z
 
 
-def q_chain(p, x, num_iterations, test=False, **model_args):
-    x_to_z = MODULE.x_to_z
-    xlst = [x]
-    zlst = []
-    new_z = x_to_z(p, inverse_sigmoid(x), **model_args)
-    zlst.append(new_z)
-
-    return xlst, zlst
-
-
-def make_model(num_steps=None, pd_steps=None, **model_args):
+def make_model(num_steps=None, pd_steps=None, loss=None, **model_args):
     '''Form the model and graph.
     
     '''
@@ -263,20 +318,24 @@ def make_model(num_steps=None, pd_steps=None, **model_args):
     dparams = MODULE.init_dparams({}, **model_args)
 
     logger.info("Setting input variables")
-    z_in = T.matrix('z_in')
     x_in = T.tensor4('x_in')
+    z_in = T.matrix('z_in')
+    y_in = T.matrix('y_in')
 
     logger.info("Building graph")
     
-    p_lst_x, p_lst_z = p_chain(gparams, z_in, num_steps, pd_steps=pd_steps,
-                               **model_args)
-    q_lst_x, q_lst_z = q_chain(gparams, x_in, num_steps, **model_args)
+    p_lst_x, p_lst_y, p_lst_z = p_chain(gparams, z_in, num_steps,
+                                        pd_steps=pd_steps, **model_args)
+    q_lst_x, q_lst_y, q_lst_z = q_chain(gparams, x_in, y_in, num_steps,
+                                        **model_args)
 
     z_inf = q_lst_z[-1]
 
     logger.debug("p chain x: {}".format(p_lst_x))
+    logger.debug("p chain y: {}".format(p_lst_y))
     logger.debug("p chain z: {}".format(p_lst_z))
     logger.debug("q chain x: {}".format(q_lst_x))
+    logger.debug("q chain y: {}".format(q_lst_y))
     logger.debug("q chain z: {}".format(q_lst_z))
 
     logger.info('Using {} steps of p in discriminator'.format(pd_steps))
@@ -288,7 +347,16 @@ def make_model(num_steps=None, pd_steps=None, **model_args):
     D_q_lst, D_feat_q = MODULE.discriminator(
         dparams, q_lst_x[-1], q_lst_z[-1], **model_args)
     
-    dloss, gloss = lsgan_loss(D_q_lst, D_p_lst)
+    if loss == 'lsgan':
+        loss_fn = lsgan_loss
+    elif loss == 'wgan':
+        loss_fn = wgan_loss
+    elif loss == 'bgan':
+        loss_fn = bgan_loss
+    else:
+        raise NotImplementedError(loss)
+        
+    dloss, gloss = loss_fn(D_q_lst, D_p_lst)
     
     results = {
         'D loss': dloss,
@@ -353,11 +421,13 @@ def train(train_fn, gen_fn, chain_fn, inpaint_fn, save_fn, datasets,
         e_results = {}
         iterator = datasets['train'].get_epoch_iterator()
         x_in_ = None
+        label_ = None
         
         for batch in iterator:
             x_in, label = batch
             if x_in_ is None:
                 x_in_ = x_in
+                label_ = label
             if batch_size is None:
                 batch_size = x_in.shape[0]
             
@@ -411,14 +481,17 @@ def train(train_fn, gen_fn, chain_fn, inpaint_fn, save_fn, datasets,
         inpaint_chain = inpaint_fn(x_in_[:64], z_im)
         
         plot_images(
-            x_gen, path.join(image_dir, 'gen_epoch_{}.png'.format(epoch)))
-        plot_images(x_in_[:64], path.join(image_dir, 'gt.png'))
+            x_gen, path.join(image_dir, 'gen_epoch_{}'.format(epoch)))
+        plot_images(x_in_[:64], path.join(image_dir, 'gt'))
         
         chain = []
         for x in inpaint_chain:
             x = x.reshape(8, 8, DIM_C, DIM_X, DIM_Y)
-            x = x.transpose(0, 3, 1, 4, 2)
-            x = x.reshape(8 * DIM_X, 8 * DIM_Y, DIM_C)
+            x_ = np.zeros((16, 8, DIM_C, DIM_X, DIM_Y))
+            x_[:8] = x
+            x_[8:] = x_in_[:64].reshape(8, 8, DIM_C, DIM_X, DIM_Y)
+            x = x_.transpose(0, 3, 1, 4, 2)
+            x = x.reshape(16 * DIM_X, 8 * DIM_Y, DIM_C)
             chain.append(x)
         
         imageio.mimsave(path.join(image_dir, 'gen_inpaint.gif'), chain)
@@ -438,7 +511,8 @@ def train(train_fn, gen_fn, chain_fn, inpaint_fn, save_fn, datasets,
 _model_defaults = dict(
     num_steps=3,
     pd_steps=1,
-    dim_z=128
+    dim_z=128,
+    loss='bgan'
 )
 
 _optimizer_defaults = dict(

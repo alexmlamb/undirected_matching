@@ -19,6 +19,7 @@ from utils import init_tparams, join2, srng
 
 logger = logging.getLogger('UDGAN.conv1')
 
+_semi_supervised = False
 _defaults = dict(
     n_levels=3, dim_z=128, dim_h=128, dim_hd=512, multi_discriminator=True,
     normalize_z=True
