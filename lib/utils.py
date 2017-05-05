@@ -173,6 +173,13 @@ def concatenate(tensor_list, axis=0):
     return out
 
 
+def sample_multinomial(y):
+    p = T.nnet.softmax(y)
+    samples = trng.multinomial(pvals=p).astype(floatX)
+    samples = theano.gradient.disconnected_grad(samples)
+    return samples
+
+
 class Parameters():
     def __init__(self):
         # self.__dict__['tparams'] = dict()

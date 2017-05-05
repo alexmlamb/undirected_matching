@@ -21,6 +21,7 @@ def accuracy(p,y):
 def expand(y,n):
     return T.extra_ops.to_one_hot(y, n)
 
+
 def clip_updates(updates, params):
     new_updates = []
     for (p,u) in updates.items():
@@ -29,6 +30,7 @@ def clip_updates(updates, params):
             u = T.clip(u, -0.01, 0.01)
         new_updates.append((p,u))
     return new_updates
+
 
 def lsgan_loss(D_q_lst, D_p_lst):
     dloss = 0.0
@@ -48,6 +50,7 @@ def lsgan_loss(D_q_lst, D_p_lst):
 
     return dloss / max_len, gloss / max_len
 
+
 def wgan_loss(D_q_lst, D_p_lst):
     dloss = 0.0
     gloss = 0.0
@@ -63,6 +66,7 @@ def wgan_loss(D_q_lst, D_p_lst):
 
     return dloss / len(D_q_lst), gloss / len(D_q_lst)
 
+
 def bgan_loss(D_q_lst, D_p_lst):
     dloss = 0.0
     gloss = 0.0
@@ -73,6 +77,32 @@ def bgan_loss(D_q_lst, D_p_lst):
         gloss += (D_p ** 2).mean() + (D_q ** 2).mean()
         
     return dloss / len(D_q_lst), gloss / len(D_q_lst)
+
+
+def bgan_loss_2(D_q_lst, D_p_lst, samples, g_output_logit):
+    
+    dloss = 0.0
+    gloss = 0.0
+    
+    for D_q, D_p in zip(D_q_lst, D_p_lst):
+        dloss += (T.nnet.softplus(-D_q)).mean() + (
+        T.nnet.softplus(-D_p)).mean() + D_p.mean()
+        gloss += (D_p ** 2).mean() + (D_q ** 2).mean()
+        
+        log_g = (samples * (g_output_logit - log_sum_exp2(
+            g_output_logit, axis=1))[None, :, :]).sum(axis=2)
+        
+        log_N = T.log(D_p.shape[0]).astype(floatX)
+        log_Z_est = log_sum_exp(D_p - log_N, axis=0)
+        log_w_tilde = D_p - T.shape_padleft(log_Z_est) - log_N
+        w_tilde = T.exp(log_w_tilde)
+        w_tilde_ = theano.gradient.disconnected_grad(w_tilde)
+        d.update(log_w_tilde=log_w_tilde, w_tilde=w_tilde)
+        
+        generator_loss += -(w_tilde_ * log_g).sum(0).mean()
+        
+    return dloss / len(D_q_lst), gloss / len(D_q_lst)
+
 
 if __name__ == "__main__":
 

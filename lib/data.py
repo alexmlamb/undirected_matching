@@ -43,6 +43,7 @@ class Rescale(Transformer):
     def transform_batch(self, batch):
         index = self.sources.index('features')
         x = float(self.max - self.min) * (batch[index] / 255.) - self.min
+        x = 2. * x - 1. 
         x = x.astype(floatX)
         batch = list(batch)
         batch[index] = x
