@@ -30,7 +30,7 @@ def clip_updates(updates, params):
         new_updates.append((p,u))
     return new_updates
 
-def lsgan_loss(D_q_lst, D_p_lst):
+def lsgan_loss(D_q_lst, D_p_lst, bs=True):
     dloss = 0.0
     gloss = 0.0
 
@@ -47,6 +47,17 @@ def lsgan_loss(D_q_lst, D_p_lst):
         gloss += T.mean(T.sqr(0.0 - D_q))
 
     return dloss / max_len, gloss / max_len
+
+def improvement_loss(D1lst, D2lst): 
+    new_loss = 0.0
+
+    for i in range(len(D1lst)):
+        D1 = D1lst[i]
+        D2 = D2lst[i]
+
+        new_loss += T.mean(T.switch(T.gt(D2,D1),0.0,-0.1 * D2))
+
+    return new_loss
 
 def wgan_loss(D_q_lst, D_p_lst):
     dloss = 0.0
