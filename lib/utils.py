@@ -212,7 +212,7 @@ class Parameters():
 
     def load(self, filename):
         tparams = self.__dict__['tparams']
-        loaded = pickle.load(open(filename, 'rb'), encoding='latin1')
+        loaded = pickle.load(open(filename, 'rb'))
         for k in loaded:
             tparams[k] = loaded[k]
 
@@ -243,11 +243,18 @@ if __name__ == "__main__":
 
     import numpy.random as rng
     import numpy as np
-    x1 = rng.normal(size = (64,3,32,32))
-    x2 = np.zeros(shape = (64,3,32,32))
+    #x1 = rng.normal(size = (64,3,32,32))
+    #x2 = np.zeros(shape = (64,3,32,32))
 
-    x3 = merge_images(x1,x2)
+    #x3 = merge_images(x1,x2)
 
-    print x3.shape
+    #print x3.shape
+    p = Parameters()
+    #p.tparams = {'a' : theano.shared(np.zeros(shape=(13,)))}
 
+    p.load("derp")
     
+    print p.tparams['tparams']['a'].get_value()
+
+
+
