@@ -18,7 +18,8 @@ def is_square(shp, n_colors=1):
     is_sqr_colors = (shp == n_colors*np.round(np.sqrt(np.array(shp)/float(n_colors)))**2)
     return is_sqr | is_sqr_colors
 
-def show_receptive_fields(theta, P=None, n_colors=None, max_display=100, grid_wa=None,title=""):
+def show_receptive_fields(theta, P=None, n_colors=None, max_display=100,
+                          grid_wa=None, labels=None, title=""):
     """
     Display receptive fields in a grid. Tries to intelligently guess whether to treat the rows,
     the columns, or the last two axes together as containing the receptive fields. It does this
@@ -81,33 +82,41 @@ def show_receptive_fields(theta, P=None, n_colors=None, max_display=100, grid_wa
     vmin = np.min(theta)
     vmax = np.max(theta)
 
-
     for jj in range(nf):
         plt.subplot(grid_wa, grid_wb, jj+1)
         
         if jj == int(np.sqrt(nf)/2) - 1:
             plt.title(title)
 
-        ptch = np.zeros((n_colors*img_w**2,))
+        ptch = np.zeros((n_colors * img_w ** 2,))
         ptch[:theta.shape[0]] = theta[:,jj]
         if n_colors==3:
             ptch = ptch.reshape((n_colors, img_w, img_w))
-            ptch = ptch.transpose((1,2,0)) # move color channels to end
+            ptch = ptch.transpose((1, 2, 0)) # move color channels to end
         else:
             ptch = ptch.reshape((img_w, img_w))
         #ptch -= vmin
         #ptch /= vmax-vmin
-
-        plt.imshow(ptch, interpolation='nearest', cmap=cm.Greys_r, vmin = 0.0, vmax = 1.0)
+        
+        plt.imshow(ptch, interpolation='nearest', cmap=cm.Greys_r, vmin = 0.0,
+                   vmax = 1.0)
+        
+        if labels is not None:
+            if len(str(labels[jj])) > 8:
+                plt.text(0., -1., labels[jj], fontsize=6)
+            elif len(str(labels[jj])) > 16:
+                plt.text(0., -1., labels[jj], fontsize=4)
+            elif len(str(labels[jj])) > 24:
+                plt.text(0., -1., labels[jj], fontsize=2)
+            else:
+                plt.text(0., -1., labels[jj])
 
         plt.axis('off')
-
-    
 
     return True
 
 
-def plot_images(X, fname, title=""):
+def plot_images(X, fname, labels=None, title=""):
     """
     Plot images in a grid.
     X is expected to be a 4d tensor of dimensions [# images]x[# colors]x[height]x[width]
@@ -132,7 +141,8 @@ def plot_images(X, fname, title=""):
     # move color to end
     Xcol = X.reshape((X.shape[0], -1,)).T
     plt.figure(figsize=[8,8])
-    if show_receptive_fields(Xcol, n_colors=X.shape[1], title=title):
+    if show_receptive_fields(Xcol, n_colors=X.shape[1], labels=labels,
+                             title=title):
         #plt.savefig(fname + '.pdf')
         plt.savefig(fname + ".png")
     else:

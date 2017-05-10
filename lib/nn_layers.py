@@ -81,7 +81,9 @@ def param_init_convlayer(options,params,prefix='ff',nin=None,nout=None,kernel_le
 
     return params
 
-def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor.tanh(x)',stride=None):
+def convlayer(tparams, state_below, options,prefix='rconv',
+              activ='lambda x: tensor.tanh(x)', stride=None,
+              bn_mean=None, bn_sigma=None):
     logger.debug('Forming layer with name {}'.format(prefix))
     #print "kernel shape", tparams[prefix+"_W"].get_value().shape[2]
 
@@ -98,9 +100,12 @@ def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor
         raise Exception(kernel_shape)
 
     if stride == -2:
-        conv_out = deconv(state_below,tparams[prefix+'_W'].transpose(1,0,2,3),subsample=(2,2), border_mode=(2,2))
+        conv_out = deconv(state_below, tparams[prefix+'_W'].transpose(1,0,2,3),
+                          subsample=(2,2), border_mode=(2,2))
     else:
-        conv_out = dnn.dnn_conv(img=state_below,kerns=tparams[prefix+'_W'],subsample=(stride, stride),border_mode=padsize,precision='float32')
+        conv_out = dnn.dnn_conv(img=state_below,kerns=tparams[prefix+'_W'],
+                                subsample=(stride, stride), border_mode=padsize,
+                                precision='float32')
 
     conv_out = conv_out + tparams[prefix+'_b'].dimshuffle('x', 0, 'x', 'x')
 
@@ -111,9 +116,13 @@ def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor
         batch_norm = False
 
     if batch_norm:
-        conv_out = (conv_out - T.mean(conv_out, axis=(0,2,3), keepdims=True)) / (0.01 + T.std(conv_out, axis=(0,2,3), keepdims=True))
-
-        conv_out = conv_out*tparams[prefix+'_newsigma'].dimshuffle('x',0,'x','x') + tparams[prefix+'_newmu'].dimshuffle('x',0,'x','x')
+        if bn_mean is None:
+            bn_mean = T.mean(conv_out, axis=(0,2,3), keepdims=True)
+        if bn_sigma is None:
+            bn_sigma = T.std(conv_out, axis=(0,2,3), keepdims=True)
+        conv_out = (conv_out - bn_mean) / (1e-6 + bn_sigma)
+        conv_out = (conv_out * tparams[prefix+'_newsigma'].dimshuffle('x', 0, 'x', 'x')
+                    + tparams[prefix+'_newmu'].dimshuffle('x', 0, 'x', 'x'))
 
     conv_out = eval(activ)(conv_out)
 
@@ -153,10 +162,9 @@ def fflayer(tparams,
     else:
         batch_norm = False
 
-
     if batch_norm:
-        preactivation = (preactivation - preactivation.mean(axis=0)) / (0.0001 + preactivation.std(axis=0))
-        preactivation = preactivation + 0.0*(tparams[prefix+'_newmu'] + preactivation*tparams[prefix+'_newsigma'])
+        preactivation = (preactivation - preactivation.mean(axis=0)) / (1e-6 + preactivation.std(axis=0))
+        preactivation = tparams[prefix+'_newmu'] + preactivation * tparams[prefix+'_newsigma']
     #if layer_norm:
     #    preactivation = (preactivation - preactivation.mean(axis=1,keepdims=True)) / (0.0000001 + preactivation.std(axis=1,keepdims=True))
     #if mean_bn:

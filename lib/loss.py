@@ -6,6 +6,12 @@ sys.path.append("/u/lambalex/DeepLearning/dreamprop/lib")
 import theano
 import theano.tensor as T
 
+from utils import log_sum_exp, log_sum_exp2
+
+
+floatX = theano.config.floatX
+
+
 def cast(inp):
     return T.cast(inp, 'float32')
 
@@ -87,19 +93,25 @@ def bgan_loss_2(D_q_lst, D_p_lst, samples, g_output_logit):
     for D_q, D_p in zip(D_q_lst, D_p_lst):
         dloss += (T.nnet.softplus(-D_q)).mean() + (
         T.nnet.softplus(-D_p)).mean() + D_p.mean()
+        
         gloss += (D_p ** 2).mean() + (D_q ** 2).mean()
         
-        log_g = (samples * (g_output_logit - log_sum_exp2(
-            g_output_logit, axis=1))[None, :, :]).sum(axis=2)
-        
+        if g_output_logit.ndim == 2:
+            log_g = (samples * (g_output_logit - log_sum_exp2(
+                g_output_logit, axis=1))[None, :, :]).sum(axis=2)
+        elif g_output_logit.ndim == 3:
+            log_g = (samples * (g_output_logit - log_sum_exp2(
+                g_output_logit, axis=2))[None, :, :, :]).sum(axis=(2, 3))
+        else:
+            raise ValueError()
+
         log_N = T.log(D_p.shape[0]).astype(floatX)
         log_Z_est = log_sum_exp(D_p - log_N, axis=0)
         log_w_tilde = D_p - T.shape_padleft(log_Z_est) - log_N
         w_tilde = T.exp(log_w_tilde)
         w_tilde_ = theano.gradient.disconnected_grad(w_tilde)
-        d.update(log_w_tilde=log_w_tilde, w_tilde=w_tilde)
-        
-        generator_loss += -(w_tilde_ * log_g).sum(0).mean()
+           
+        gloss += -(w_tilde_ * log_g[:, :, None]).sum(0).mean()
         
     return dloss / len(D_q_lst), gloss / len(D_q_lst)
 

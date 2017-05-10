@@ -14,6 +14,10 @@ from sklearn.cross_validation import KFold
 import numpy as np
 import numpy.random as rng
 
+
+floatX = theano.config.floatX
+
+
 # make prefix-appended name
 def _p(pp, name):
         return '%s_%s' % (pp, name)
@@ -128,6 +132,26 @@ def uniform_weight(nin, nout, scale=None):
     return W.astype('float32')
 
 
+def log_sum_exp(x, axis=None):
+    '''Numerically stable log( sum( exp(A) ) ).
+
+    '''
+    x_max = T.max(x, axis=axis, keepdims=True)
+    y = T.log(T.sum(T.exp(x - x_max), axis=axis, keepdims=True)) + x_max
+    y = T.sum(y, axis=axis)
+    return y
+
+
+def log_sum_exp2(x, axis=None):
+    '''Numerically stable log( sum( exp(A) ) ).
+
+    '''
+    x_max = T.max(x, axis=axis, keepdims=True)
+    y = T.log(T.sum(T.exp(x - x_max), axis=axis, keepdims=True)) + x_max
+    y = T.sum(y, axis=axis, keepdims=True)
+    return y
+
+
 def concatenate(tensor_list, axis=0):
     """
     Alternative implementation of `theano.tensor.concatenate`.
@@ -174,9 +198,16 @@ def concatenate(tensor_list, axis=0):
 
 
 def sample_multinomial(y):
+    if y.ndim == 3:
+        shape = y.shape
+        y = y.reshape((-1, y.shape[0] * y.shape[1]))
+    else:
+        shape = None
     p = T.nnet.softmax(y)
-    samples = trng.multinomial(pvals=p).astype(floatX)
+    samples = srng.multinomial(pvals=p).astype(floatX)
     samples = theano.gradient.disconnected_grad(samples)
+    if shape is not None:
+        samples = samples.reshape(shape)
     return samples
 
 
