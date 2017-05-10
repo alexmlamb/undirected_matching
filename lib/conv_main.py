@@ -86,7 +86,7 @@ nfd = 512
 print "dataset", dataset
 
 #3
-num_steps = 3
+num_steps = 1
 print "num steps", num_steps
 
 train_classifier_separate = True
@@ -291,17 +291,17 @@ print p_lst_z
 print q_lst_x
 print q_lst_z
 
-D_p_lst_3,_ = discriminator(dparams, p_lst_x[2], p_lst_z[2])
+#D_p_lst_3,_ = discriminator(dparams, p_lst_x[2], p_lst_z[2])
 
-D_p_lst_2,_ = discriminator(dparams, p_lst_x[1], p_lst_z[1])
+#D_p_lst_2,_ = discriminator(dparams, p_lst_x[1], p_lst_z[1])
 
 D_p_lst_1,_ = discriminator(dparams, p_lst_x[0], p_lst_z[0])
 
 D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
 
-dloss, gloss = lsgan_loss(D_q_lst, D_p_lst_3 + D_p_lst_2)
+dloss, gloss = lsgan_loss(D_q_lst, D_p_lst_1)
 
-print "double disc"
+print "single disc"
 print "not using improvement objective"
 #improvement_objective = improvement_loss_weight * improvement_loss(D_p_lst_1, D_p_lst_2)
 #gloss += improvement_objective

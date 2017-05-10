@@ -65,7 +65,7 @@ nfg = 1024
 nfd = 1024
 
 #3
-num_steps = 3
+num_steps = 1
 print "num steps", num_steps
 
 train_classifier_separate = True

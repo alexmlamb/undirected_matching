@@ -299,12 +299,12 @@ D_p_lst_1,_ = discriminator(dparams, p_lst_x[0], p_lst_z[0])
 
 D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
 
-dloss, gloss = lsgan_loss(D_q_lst, D_p_lst_3 + D_p_lst_2)
+dloss, gloss = lsgan_loss(D_q_lst, D_p_lst_3)
 
-print "double disc"
-print "not using improvement objective"
-#improvement_objective = improvement_loss_weight * improvement_loss(D_p_lst_1, D_p_lst_2)
-#gloss += improvement_objective
+print "single disc"
+print "using improvement objective"
+improvement_objective = improvement_loss_weight * improvement_loss(D_p_lst_1, D_p_lst_2)
+gloss += improvement_objective
 
 dupdates = lasagne.updates.rmsprop(dloss, dparams.values(),0.0001)
 gloss_grads = T.grad(gloss, gparams.values(), disconnected_inputs='ignore')
