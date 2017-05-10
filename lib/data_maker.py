@@ -6,9 +6,13 @@ import os
 import numpy as np
 import random
 from PIL import Image
+from viz import plot_images
 
 max_caption_len = 360
 image_width = 64
+
+def normalize(x):
+    return (x / 255.0).astype('float32')
 
 def caption2arr(caption):
     arr = np.zeros(shape = (max_caption_len,))
@@ -71,10 +75,15 @@ def get_image(image_file):
 
     imgObj = Image.open(image_file).convert('RGB')
 
-    imgObj = imgObj.resize((image_width,image_width))
-    img = np.asarray(imgObj)
+    print np.array(imgObj).shape
 
-    return img
+    imgObj = imgObj.resize((image_width,image_width))
+
+    img = np.asarray(imgObj).transpose(2,0,1)
+
+    print img.shape
+
+    return normalize(img)
 
 def get_caption(text_file,index):
 
@@ -117,9 +126,13 @@ if __name__ == "__main__":
 
     keys = list(set(text_files.keys() + image_files.keys()))
 
-    img,text = getBatch(keys[0:10],text_files,image_files)
+    img,text = getBatch(keys[0:64],text_files,image_files)
 
     print img.shape
     print text.shape
+
+    plot_images(img.reshape((64,64*64*3)), "derp.png")
+
+
 
 
