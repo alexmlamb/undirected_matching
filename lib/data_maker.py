@@ -1,5 +1,23 @@
+'''
+code for loading birds dataset
+'''
+
 import os
 import numpy as np
+import random
+from PIL import Image
+
+max_caption_len = 360
+image_width = 64
+
+def caption2arr(caption):
+    arr = np.zeros(shape = (max_caption_len,))
+
+    for charInd in range(len(caption)):
+        char = caption[charInd]
+        arr[charInd] = ord(char)
+
+    return arr
 
 def get_text_files(loc):
     if loc[-1] != "/":
@@ -50,13 +68,44 @@ def get_image_files(loc):
     return images_taken
 
 def get_image(image_file):
-    return 0.0
 
-def get_caption(text_file):
+    imgObj = Image.open(image_file).convert('RGB')
+
+    imgObj = imgObj.resize((image_width,image_width))
+    img = np.asarray(imgObj)
+
+    return img
+
+def get_caption(text_file,index):
+
+    lines = open(text_file,"r")
+    linelst = []
+
+    for line in lines:
+        linelst.append(line)
+
+    if index == None:
+        index = random.randint(0,len(linelst)-1)
     
+    line = linelst[index]
 
-def getBatch():
-    pass
+    arr = caption2arr(line)
+
+    return arr
+
+def getBatch(keyLst,text_files,image_files):
+
+    imgLst = []
+    captionLst = []
+
+    for key in keyLst:
+        imgLst.append([get_image(image_files[key])])
+        captionLst.append([get_caption(text_files[key],index=None)])
+
+    imageObj = np.concatenate(imgLst,axis=0)
+    textObj = np.concatenate(captionLst,axis=0)
+
+    return imageObj, textObj
 
 if __name__ == "__main__":
 
@@ -68,12 +117,9 @@ if __name__ == "__main__":
 
     keys = list(set(text_files.keys() + image_files.keys()))
 
-    key = keys[0]
+    img,text = getBatch(keys[0:10],text_files,image_files)
 
-    image = get_image(text_files[key])
-    caption = get_caption(image_files[key])
-
-    print image
-    print caption
+    print img.shape
+    print text.shape
 
 
