@@ -85,10 +85,11 @@ class SvhnData:
         if self.index + self.mb_size + 10 >= self.numExamples:
             self.index = 0
 
-        mb = self.dataobj[self.index : self.index + self.mb_size]
+        mb_x = self.train_X[self.index : self.index + self.mb_size]
+        mb_y = self.train_Y[self.index : self.index + self.mb_size]
 
         self.index += self.mb_size
 
-        return {'x' : mb, 'labels' : np.zeros(self.mb_size).astype('int32')}
+        return {'x' : mb_x, 'y' : mb_y}
 
 

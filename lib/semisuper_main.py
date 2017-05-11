@@ -36,9 +36,9 @@ class ConsiderConstant(theano.compile.ViewOp):
 
 consider_constant = ConsiderConstant()
 
-dataset = "mnist"
+#dataset = "mnist"
 #dataset = "anime"
-#dataset = "svhn"
+dataset = "svhn"
 
 if dataset == "mnist":
     mn = gzip.open("/u/lambalex/data/mnist/mnist.pkl.gz")
@@ -77,7 +77,7 @@ elif dataset == "svhn":
 
     num_examples = 50000
 
-nl = 512
+nl = 128
 print "num latent", nl
 #128 works for nl
 nfg = 512
@@ -86,23 +86,12 @@ nfd = 512
 print "dataset", dataset
 
 #3
-num_steps = 6
+num_steps = 1
 print "num steps", num_steps
 
-train_classifier_separate = True
-print "train classifier separate", train_classifier_separate
-
-#skip_conn = True
-#print "skip conn", skip_conn
-
-latent_sparse = True
+latent_sparse = False
 print "latent sparse", latent_sparse
 
-persist_p_chain = False
-print "persistent p chain", persist_p_chain
-
-blending_rate = 0.5
-print 'blending rate (odds of keeping old z in P chain)', blending_rate
 
 improvement_loss_weight = 0.0
 print "improvement loss weight", improvement_loss_weight
@@ -243,14 +232,11 @@ def p_chain(p, z, num_iterations):
 
     else:
 
-        for inds in range(0,num_iterations-1):
+        for inds in range(0,num_iterations):
             new_x = z_to_x(p, zlst[-1])
             xlst.append(new_x)
-            new_z = x_to_z(p, consider_constant(xlst[-1]))
+            new_z = x_to_z(p, xlst[-1])
             zlst.append(new_z)
-        
-        new_x = z_to_x(p, zlst[-1])
-        xlst.append(new_x)
 
 
     for j in range(len(xlst)):
@@ -280,6 +266,7 @@ dparams = init_dparams({})
 
 z_in = T.matrix('z_in')
 x_in = T.matrix()
+true_y = T.ivector('true_y')
 
 p_lst_x,p_lst_z = p_chain(gparams, z_in, num_steps)
 
@@ -289,30 +276,18 @@ p_lst_x_long,p_lst_z_long = p_chain(gparams, z_in, 19)
 
 z_inf = q_lst_z[-1]
 
-print p_lst_x
-print p_lst_z
-print q_lst_x
-print q_lst_z
+closs,cacc = classifier(cparams,z_inf,x_in,true_y)
 
-D_p_lst_6,_ = discriminator(dparams, p_lst_x[5], p_lst_z[5])
-D_p_lst_5,_ = discriminator(dparams, p_lst_x[4], p_lst_z[4])
-D_p_lst_4,_ = discriminator(dparams, p_lst_x[3], p_lst_z[3])
-D_p_lst_3,_ = discriminator(dparams, p_lst_x[2], p_lst_z[2])
-D_p_lst_2,_ = discriminator(dparams, p_lst_x[1], p_lst_z[1])
-D_p_lst_1,_ = discriminator(dparams, p_lst_x[0], p_lst_z[0])
+D_p_lst_1,_ = discriminator(dparams, p_lst_x[-1], p_lst_z[-1])
 
 D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
 
-dloss, gloss = lsgan_loss(D_q_lst, D_p_lst_6)
+dloss, gloss = lsgan_loss(D_q_lst, D_p_lst_1)
 
 print "single disc"
-print "using improvement objective"
-improvement_objective = 0.0
-improvement_objective += improvement_loss_weight * improvement_loss(D_p_lst_1, D_p_lst_2)
-improvement_objective += improvement_loss_weight * improvement_loss(D_p_lst_2, D_p_lst_3)
-improvement_objective += improvement_loss_weight * improvement_loss(D_p_lst_3, D_p_lst_4)
-improvement_objective += improvement_loss_weight * improvement_loss(D_p_lst_4, D_p_lst_5)
-gloss += improvement_objective
+print "not using improvement objective"
+#improvement_objective = improvement_loss_weight * improvement_loss(D_p_lst_1, D_p_lst_2)
+#gloss += improvement_objective
 
 dupdates = lasagne.updates.rmsprop(dloss, dparams.values(),0.0001)
 gloss_grads = T.grad(gloss, gparams.values(), disconnected_inputs='ignore')
@@ -326,7 +301,7 @@ dgupdates.update(gupdates)
 dgcupdates = dupdates.copy()
 dgcupdates.update(gcupdates)
 
-train_disc_gen_classifier = theano.function(inputs = [x_in, z_in], outputs=[dloss,p_lst_x[-1],p_lst_z[-1],improvement_objective], updates=dgcupdates,on_unused_input='ignore')
+train_disc_gen_classifier = theano.function(inputs = [x_in, z_in,true_y], outputs=[dloss,p_lst_x[-1],p_lst_z[-1],closs,cacc], updates=dgcupdates,on_unused_input='ignore')
 
 get_zinf = theano.function([x_in], outputs=z_inf)
 #get_dfeat = theano.function([x_in], outputs=D_feat_q)
@@ -344,13 +319,7 @@ if __name__ == '__main__':
 
     for iteration in range(0,500000):
 
-        if persist_p_chain:
-            z_in_new = rng.normal(size=(64,nl)).astype('float32')
-            blending = rng.uniform(0.0,1.0,size=(64,))
-            z_in_new[blending>=blending_rate] = z_out_p[blending>=blending_rate]
-            z_in = z_in_new
-        else:
-            z_in = rng.normal(size=(64,nl)).astype('float32')
+        z_in = rng.normal(size=(64,nl)).astype('float32')
 
         if latent_sparse:
             z_in[:,128:] *= 0.0
@@ -371,14 +340,15 @@ if __name__ == '__main__':
             x_in = normalize(animeData.getBatch()).reshape((64,32*32*3))
 
         elif dataset == "svhn":
-            x_in = normalize(svhnData.getBatch()['x']).reshape((64,32*32*3))
+            svhn_batch = svhnData.getBatch()
+            x_in = normalize(svhn_batch['x']).reshape((64,32*32*3))
+            y_in = svhn_batch['y']
 
-        dloss,gen_x,z_out_p,improvement_obj = train_disc_gen_classifier(x_in,z_in)
-        
+        dloss,gen_x,z_out_p = train_disc_gen_classifier(x_in,z_in,y_in)
+
 
         print "iteration", iteration
         print "dloss", dloss
-        print "improvement_obj", improvement_obj
         print "gen_x mean", gen_x.mean()
 
         if iteration % 1000 == 0:

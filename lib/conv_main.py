@@ -89,20 +89,9 @@ print "dataset", dataset
 num_steps = 1
 print "num steps", num_steps
 
-train_classifier_separate = True
-print "train classifier separate", train_classifier_separate
-
-#skip_conn = True
-#print "skip conn", skip_conn
-
 latent_sparse = False
 print "latent sparse", latent_sparse
 
-persist_p_chain = False
-print "persistent p chain", persist_p_chain
-
-blending_rate = 0.5
-print 'blending rate (odds of keeping old z in P chain)', blending_rate
 
 improvement_loss_weight = 0.0
 print "improvement loss weight", improvement_loss_weight
@@ -336,13 +325,7 @@ if __name__ == '__main__':
 
     for iteration in range(0,500000):
 
-        if persist_p_chain:
-            z_in_new = rng.normal(size=(64,nl)).astype('float32')
-            blending = rng.uniform(0.0,1.0,size=(64,))
-            z_in_new[blending>=blending_rate] = z_out_p[blending>=blending_rate]
-            z_in = z_in_new
-        else:
-            z_in = rng.normal(size=(64,nl)).astype('float32')
+        z_in = rng.normal(size=(64,nl)).astype('float32')
 
         if latent_sparse:
             z_in[:,128:] *= 0.0
