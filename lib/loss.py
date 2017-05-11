@@ -6,6 +6,12 @@ sys.path.append("/u/lambalex/DeepLearning/dreamprop/lib")
 import theano
 import theano.tensor as T
 
+class ConsiderConstant(theano.compile.ViewOp):
+    def grad(self, args, g_outs):
+        return [T.zeros_like(g_out) for g_out in g_outs]
+
+consider_constant = ConsiderConstant()
+
 def cast(inp):
     return T.cast(inp, 'float32')
 
@@ -54,10 +60,12 @@ def improvement_loss(D1lst, D2lst):
     for i in range(len(D1lst)):
         D1 = D1lst[i]
         D2 = D2lst[i]
-
-        new_loss += T.mean(T.switch(T.gt(D2,D1),0.0,-0.1 * D2))
+        print "mod loss square 2"
+        new_loss += T.mean(T.switch(T.lt(D2,D1)*T.lt(D2,0.9),(D2 - (consider_constant(D1)+0.1))**2,0.0))
+        new_loss += T.mean(T.switch(T.gt(D2,1.0), 1.0*D2, 0.0))
 
     return new_loss
+
 
 def wgan_loss(D_q_lst, D_p_lst):
     dloss = 0.0

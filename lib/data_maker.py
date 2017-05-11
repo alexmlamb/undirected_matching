@@ -7,6 +7,9 @@ import numpy as np
 import random
 from PIL import Image
 from viz import plot_images
+import fuel
+from fuel.datasets.base import Dataset
+
 
 max_caption_len = 360
 image_width = 64
@@ -36,14 +39,14 @@ def get_text_files(loc):
 
     images_taken = {}
 
-    print "number of images total", len(images)
+    #print "number of images total", len(images)
 
     for image in images:
         if ".txt" in image:
             key = image[-14:-4]
             images_taken[key] = image
 
-    print "num images taken", len(images_taken)
+    #print "num images taken", len(images_taken)
 
     return images_taken
 
@@ -60,14 +63,14 @@ def get_image_files(loc):
 
     images_taken = {}
 
-    print "number of images total", len(images)
+    #print "number of images total", len(images)
 
     for image in images:
         if ".jpg" in image:
             key = image[-14:-4]
             images_taken[key] = image
 
-    print "num images taken", len(images_taken)
+    #print "num images taken", len(images_taken)
 
     return images_taken
 
@@ -75,13 +78,13 @@ def get_image(image_file):
 
     imgObj = Image.open(image_file).convert('RGB')
 
-    print np.array(imgObj).shape
+    #print np.array(imgObj).shape
 
     imgObj = imgObj.resize((image_width,image_width))
 
     img = np.asarray(imgObj).transpose(2,0,1)
 
-    print img.shape
+    #print img.shape
 
     return normalize(img)
 
@@ -102,36 +105,54 @@ def get_caption(text_file,index):
 
     return arr
 
-def getBatch(keyLst,text_files,image_files):
+class BirdsData(Dataset):
+    provides_sources = ('images', 'captions')
 
-    imgLst = []
-    captionLst = []
+    def __init__(self,sources):
 
-    for key in keyLst:
-        imgLst.append([get_image(image_files[key])])
-        captionLst.append([get_caption(text_files[key],index=None)])
+        super(BirdsData,self).__init__(sources)
 
-    imageObj = np.concatenate(imgLst,axis=0)
-    textObj = np.concatenate(captionLst,axis=0)
+        text_loc = '/u/lambalex/data/birds/text/text_c10/'
+        image_loc = '/u/lambalex/data/birds/images/images/'
 
-    return imageObj, textObj
+        self.text_files = get_text_files(text_loc)
+        self.image_files = get_image_files(image_loc)
 
+        self.keys = list(set(self.text_files.keys() + self.image_files.keys()))
+
+    #def get_data(self, state=None, request=None):
+    #    data = (numpy.random.rand(10), numpy.random.randn(3))
+    #    return self.filter_sources(data)
+
+    def get_data(self,batch_size,state=None,request=None):
+
+        imgLst = []
+        captionLst = []
+
+        keyLst = random.sample(self.keys,50)
+
+        for key in keyLst:
+            imgLst.append([get_image(self.image_files[key])])
+            captionLst.append([get_caption(self.text_files[key],index=None)])
+
+        imageObj = np.concatenate(imgLst,axis=0)
+        textObj = np.concatenate(captionLst,axis=0)
+
+        data = (imageObj, textObj)
+
+        return self.filter_sources(data)
+    
 if __name__ == "__main__":
 
-    text_loc = '/u/lambalex/data/birds/text/text_c10/'
-    image_loc = '/u/lambalex/data/birds/images/images/'
+    bd = BirdsData(sources=("images","captions")).get_data(64)
 
-    text_files = get_text_files(text_loc)
-    image_files = get_image_files(image_loc)
+    print bd[0].shape
+    print bd[1].shape
 
-    keys = list(set(text_files.keys() + image_files.keys()))
+    #img,text = getBatch(keys[0:64],text_files,image_files)
 
-    img,text = getBatch(keys[0:64],text_files,image_files)
 
-    print img.shape
-    print text.shape
-
-    plot_images(img.reshape((64,64*64*3)), "derp.png")
+    #plot_images(img.reshape((64,64*64*3)), "derp.png")
 
 
 

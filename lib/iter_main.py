@@ -86,7 +86,7 @@ nfd = 512
 print "dataset", dataset
 
 #3
-num_steps = 3
+num_steps = 6
 print "num steps", num_steps
 
 train_classifier_separate = True
@@ -104,7 +104,7 @@ print "persistent p chain", persist_p_chain
 blending_rate = 0.5
 print 'blending rate (odds of keeping old z in P chain)', blending_rate
 
-improvement_loss_weight = 0.0
+improvement_loss_weight = 1.0
 print "improvement loss weight", improvement_loss_weight
 
 def init_gparams(p):
@@ -243,11 +243,14 @@ def p_chain(p, z, num_iterations):
 
     else:
 
-        for inds in range(0,num_iterations):
+        for inds in range(0,num_iterations-1):
             new_x = z_to_x(p, zlst[-1])
             xlst.append(new_x)
-            new_z = x_to_z(p, xlst[-1])
+            new_z = x_to_z(p, consider_constant(xlst[-1]))
             zlst.append(new_z)
+        
+        new_x = z_to_x(p, zlst[-1])
+        xlst.append(new_x)
 
 
     for j in range(len(xlst)):
@@ -291,19 +294,24 @@ print p_lst_z
 print q_lst_x
 print q_lst_z
 
+D_p_lst_6,_ = discriminator(dparams, p_lst_x[5], p_lst_z[5])
+D_p_lst_5,_ = discriminator(dparams, p_lst_x[4], p_lst_z[4])
+D_p_lst_4,_ = discriminator(dparams, p_lst_x[3], p_lst_z[3])
 D_p_lst_3,_ = discriminator(dparams, p_lst_x[2], p_lst_z[2])
-
 D_p_lst_2,_ = discriminator(dparams, p_lst_x[1], p_lst_z[1])
-
 D_p_lst_1,_ = discriminator(dparams, p_lst_x[0], p_lst_z[0])
 
 D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
 
-dloss, gloss = lsgan_loss(D_q_lst, D_p_lst_3)
+dloss, gloss = lsgan_loss(D_q_lst, D_p_lst_6)
 
 print "single disc"
 print "using improvement objective"
-improvement_objective = improvement_loss_weight * improvement_loss(D_p_lst_1, D_p_lst_2)
+improvement_objective = 0.0
+improvement_objective += improvement_loss_weight * improvement_loss(D_p_lst_1, D_p_lst_2)
+improvement_objective += improvement_loss_weight * improvement_loss(D_p_lst_2, D_p_lst_3)
+improvement_objective += improvement_loss_weight * improvement_loss(D_p_lst_3, D_p_lst_4)
+improvement_objective += improvement_loss_weight * improvement_loss(D_p_lst_4, D_p_lst_5)
 gloss += improvement_objective
 
 dupdates = lasagne.updates.rmsprop(dloss, dparams.values(),0.0001)
@@ -318,7 +326,7 @@ dgupdates.update(gupdates)
 dgcupdates = dupdates.copy()
 dgcupdates.update(gcupdates)
 
-train_disc_gen_classifier = theano.function(inputs = [x_in, z_in], outputs=[dloss,p_lst_x[-1],p_lst_z[-1]], updates=dgcupdates,on_unused_input='ignore')
+train_disc_gen_classifier = theano.function(inputs = [x_in, z_in], outputs=[dloss,p_lst_x[-1],p_lst_z[-1],improvement_objective], updates=dgcupdates,on_unused_input='ignore')
 
 get_zinf = theano.function([x_in], outputs=z_inf)
 #get_dfeat = theano.function([x_in], outputs=D_feat_q)
@@ -365,11 +373,12 @@ if __name__ == '__main__':
         elif dataset == "svhn":
             x_in = normalize(svhnData.getBatch()['x']).reshape((64,32*32*3))
 
-        dloss,gen_x,z_out_p = train_disc_gen_classifier(x_in,z_in)
+        dloss,gen_x,z_out_p,improvement_obj = train_disc_gen_classifier(x_in,z_in)
         
 
         print "iteration", iteration
         print "dloss", dloss
+        print "improvement_obj", improvement_obj
         print "gen_x mean", gen_x.mean()
 
         if iteration % 1000 == 0:
