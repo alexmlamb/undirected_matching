@@ -381,7 +381,7 @@ def make_model(num_steps=None, pd_steps=None, loss=None,
         logger.info('Starting chain at gaussian noise.')
         p_lst_x, p_lst_p, p_lst_z = p_chain(gparams, z_in, num_steps,
                                         pd_steps=pd_steps, **model_args)
-        plst_x_ = p_lst_x
+        p_lst_x_ = p_lst_x
 
     # p_list_y_ is pre-activation and sampling
     q_lst_x, q_lst_y, q_lst_z = q_chain(gparams, x_in, y_in, num_steps,
@@ -509,14 +509,9 @@ def train(train_fn, gen_fn, chain_fn, chain_fn_x, inpaint_fn, inpaint_fn_d,
         
         e_results = {}
         iterator = datasets['train'].get_epoch_iterator()
-        x_in_ = None
-        label_ = None
         
         for batch in iterator:
             x_in, label = batch
-            if x_in_ is None:
-                x_in_ = x_in
-                label_ = label
             if batch_size is None:
                 batch_size = x_in.shape[0]
             
@@ -563,21 +558,24 @@ def train(train_fn, gen_fn, chain_fn, chain_fn_x, inpaint_fn, inpaint_fn_d,
         save_fn(out_path=binary_dir, suffix=suffix)
         
         # Images
+        iterator = datasets['test'].get_epoch_iterator()
+        x_in_, label_ = iterator.next()
         logger.debug('Saving images to {}'.format(image_dir))
-        z_im = rng.normal(size=(64, DIM_Z)).astype(floatX)
+        z_im = rng.normal(size=(x_in_.shape[0], DIM_Z)).astype(floatX)
         x_gen = gen_fn(z_im)
         x_gen = 0.5 * (x_gen + 1.)
         x_chain = chain_fn(z_im)
-        x_chain_x = chain_fn_x(x_in_[:64])
-        inpaint_chain = inpaint_fn(x_in_[:64], z_im)
-        inpaint_chain_d = inpaint_fn_d(x_in_[:64], z_im)
+        x_chain_x = chain_fn_x(x_in_)
+        inpaint_chain = inpaint_fn(x_in_, z_im)
+        inpaint_chain_d = inpaint_fn_d(x_in_, z_im)
         
         plot_images(
-            x_gen, path.join(image_dir, 'gen_epoch_{}'.format(epoch)))
+            x_gen[:64], path.join(image_dir, 'gen_epoch_{}'.format(epoch)))
         plot_images(x_in_[:64], path.join(image_dir, 'gt'))
         
         chain = []
         for x in inpaint_chain:
+            x = x[:64]
             x = x.reshape(8, 8, DIM_C, DIM_X, DIM_Y)
             x_ = np.zeros((16, 8, DIM_C, DIM_X, DIM_Y))
             x_[:8] = x
@@ -591,6 +589,7 @@ def train(train_fn, gen_fn, chain_fn, chain_fn_x, inpaint_fn, inpaint_fn_d,
         
         chain = []
         for x in inpaint_chain_d:
+            x = x[:64]
             x = x.reshape(8, 8, DIM_C, DIM_X, DIM_Y)
             x_ = np.zeros((16, 8, DIM_C, DIM_X, DIM_Y))
             x_[:8] = x
@@ -604,6 +603,7 @@ def train(train_fn, gen_fn, chain_fn, chain_fn_x, inpaint_fn, inpaint_fn_d,
         
         chain = []
         for x in x_chain:
+            x = x[:64]
             x = x.reshape(8, 8, DIM_C, DIM_X, DIM_Y)
             x = x.transpose(0, 3, 1, 4, 2)
             x = x.reshape(8 * DIM_X, 8 * DIM_Y, DIM_C)
@@ -614,6 +614,7 @@ def train(train_fn, gen_fn, chain_fn, chain_fn_x, inpaint_fn, inpaint_fn_d,
         
         chain = []
         for x in x_chain_x:
+            x = x[:64]
             x = x.reshape(8, 8, DIM_C, DIM_X, DIM_Y)
             x = x.transpose(0, 3, 1, 4, 2)
             x = x.reshape(8 * DIM_X, 8 * DIM_Y, DIM_C)
@@ -631,7 +632,7 @@ _model_defaults = dict(
     dim_z=128,
     loss='bgan',
     n_samples=10,
-    start_on_x=True
+    start_on_x=False
 )
 
 _optimizer_defaults = dict(
@@ -733,7 +734,7 @@ def config(data_args, model_args, optimizer_args, train_args, visualizer_args,
 
     
 if __name__ == '__main__':
-    MODULE = conv2
+    MODULE = conv1
     parser = make_argument_parser()
     args = parser.parse_args()
     set_stream_logger(args.verbosity)
