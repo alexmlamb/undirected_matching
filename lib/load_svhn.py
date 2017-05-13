@@ -1,18 +1,17 @@
 import numpy as np
 import gzip
 import cPickle
-
+import numpy.random as rng
 
 class SvhnData:
 
-    def __init__(self, segment, mb_size):
+    def __init__(self):
         np.random.seed(42)
 
         import scipy.io as sio
         train_file = svhn_file_train = "/u/lambalex/data/svhn/train_32x32.mat"
         extra_file = svhn_file_extra = '/u/lambalex/data/svhn/extra_32x32.mat'
         test_file = svhn_file_test = '/u/lambalex/data/svhn/test_32x32.mat'
-        fraction_validation = 0.05
 
         train_object = sio.loadmat(train_file)
         extra_object = sio.loadmat(extra_file)
@@ -33,63 +32,58 @@ class SvhnData:
         assert train_Y.min() == 0
         assert train_Y.max() == 9
 
+        assert test_Y.min() == 0
+        assert test_Y.max() == 9
+
         train_X = train_X.transpose(3,2,0,1)
         extra_X = extra_X.transpose(3,2,0,1)
         test_X = test_X.transpose(3,2,0,1)
 
-
         self.test_X = test_X
 
-        train_X = np.vstack((train_X, extra_X))
-        train_Y = np.vstack((train_Y, extra_Y))
+        all_train_X = np.vstack((train_X, extra_X))
+        all_train_Y = np.vstack((train_Y, extra_Y))
 
-        old_seed = np.random.randint(low=0, high=np.iinfo(np.uint32).max)
-        np.random.seed(42)
-        train_indices = np.random.choice(train_X.shape[0], int(train_X.shape[0] * (1.0 - fraction_validation)), replace = False)
-        valid_indices = np.setdiff1d(range(0,train_X.shape[0]), train_indices)
+        permutation = rng.permutation(all_train_X.shape[0])
 
-        self.mb_size = mb_size
+        all_train_X = all_train_X[permutation]
+        all_train_Y = all_train_Y[permutation]
 
-        self.valid_X = train_X[valid_indices]
-        self.valid_Y = train_Y[valid_indices]
+        self.train_X = all_train_X
+        self.train_Y = all_train_Y
 
-        self.train_X = train_X[train_indices]
-        self.train_Y = train_Y[train_indices]
+        self.test_X = test_X
+        self.test_Y = test_Y
+
+        permutation2 = rng.permutation(train_X.shape[0])
+
+        self.hard_train_X = train_X[permutation2]
+        self.hard_train_Y = train_Y[permutation2]
+
+        self.numExamples = self.train_X.shape[0]
+        print "num train examples", self.train_X.shape[0]
+        print "num test examples", self.test_X.shape[0]
+
+
+
+
+    def getBatch(self, index, segment, mb_size):
+
+        #if self.index + mb_size + 10 >= self.numExamples:
+        #    self.index = 0
 
         if segment == "train":
-            self.dataobj = self.train_X
+            mb_x = self.train_X[index : index + mb_size]
+            mb_y = self.train_Y[index : index + mb_size].flatten()
         elif segment == "test":
-            self.dataobj = self.test_X
-
-        self.numExamples = self.dataobj.shape[0]
-
-        self.index = 0
-
-        print "shape", self.train_X.shape
-
-        np.random.seed(old_seed)
-
-        print "svhn shape", self.dataobj.shape
-        print self.dataobj.min(), self.dataobj.max()
-        #raise Exception('done')
-
-    #def normalize(self, x):
-    #    return (x / 127.5) - 1.0
-
-    #def denormalize(self, x):
-    #    return (x + 1.0) * 127.5
-
-
-    def getBatch(self):
-
-        if self.index + self.mb_size + 10 >= self.numExamples:
-            self.index = 0
-
-        mb_x = self.train_X[self.index : self.index + self.mb_size]
-        mb_y = self.train_Y[self.index : self.index + self.mb_size]
-
-        self.index += self.mb_size
+            mb_x = self.test_X[index : index + mb_size]
+            mb_y = self.test_Y[index : index + mb_size].flatten()
+        elif segment == "hard_train":
+            mb_x = self.hard_train_X[index : index + mb_size]
+            mb_y = self.hard_train_Y[index : index + mb_size].flatten()
 
         return {'x' : mb_x, 'y' : mb_y}
+
+
 
 

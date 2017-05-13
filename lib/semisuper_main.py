@@ -8,6 +8,7 @@
 '''
 import sys
 
+sys.setrecursionlimit(100000)
 sys.path.append("/u/lambalex/DeepLearning/undirected_matching")
 sys.path.append("/u/lambalex/DeepLearning/undirected_matching/lib")
 
@@ -73,7 +74,7 @@ elif dataset == "svhn":
     from load_svhn import SvhnData
     from load_file import normalize, denormalize
 
-    svhnData = SvhnData(mb_size=64,segment="train")
+    svhnData = SvhnData()
 
     num_examples = 50000
 
@@ -86,15 +87,17 @@ nfd = 512
 print "dataset", dataset
 
 #3
-num_steps = 1
+num_steps = 9
 print "num steps", num_steps
 
 latent_sparse = False
 print "latent sparse", latent_sparse
 
-
 improvement_loss_weight = 0.0
 print "improvement loss weight", improvement_loss_weight
+
+num_labeled_examples_use = 50000
+print "num labeled examples used",num_labeled_examples_use
 
 def init_gparams(p):
 
@@ -104,20 +107,34 @@ def init_gparams(p):
     p = param_init_convlayer(options={},params=p,prefix='z_x_3',nin=256*1,nout=128,kernel_len=5,batch_norm=True)
     p = param_init_convlayer(options={},params=p,prefix='z_x_4',nin=128*1,nout=3,kernel_len=5,batch_norm=False)
 
-    p = param_init_convlayer(options={},params=p,prefix='x_z_1',nin=3,nout=128,kernel_len=5,batch_norm=True)
-    p = param_init_convlayer(options={},params=p,prefix='x_z_2',nin=128,nout=256,kernel_len=5,batch_norm=True)
-    p = param_init_convlayer(options={},params=p,prefix='x_z_3',nin=256,nout=512,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_1',nin=3,nout=32,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_2',nin=32,nout=64,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_3',nin=64,nout=128,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_4',nin=128,nout=256,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_5',nin=256,nout=512,kernel_len=5,batch_norm=True)
 
     p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=512*4*4,nout=nl,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=512*4*4,nout=nl,ortho=False,batch_norm=False)
 
     return init_tparams(p)
 
+def init_cparams(p):
+
+    p = param_init_fflayer(options={},params=p,prefix='c_1',nin=nl+512*4*4,nout=512,ortho=False,batch_norm=True)
+    print "mlp on top, 512 dim"
+    p = param_init_fflayer(options={},params=p,prefix='c_2',nin=512,nout=512,ortho=False,batch_norm=True)
+    p = param_init_fflayer(options={},params=p,prefix='c_3',nin=512,nout=10,ortho=False,batch_norm=False)
+
+    return init_tparams(p)
+
 def init_dparams(p):
 
-    p = param_init_convlayer(options={},params=p,prefix='DC_1',nin=3,nout=128,kernel_len=5,batch_norm=False)
-    p = param_init_convlayer(options={},params=p,prefix='DC_2',nin=128,nout=256,kernel_len=5,batch_norm=False)
-    p = param_init_convlayer(options={},params=p,prefix='DC_3',nin=256,nout=512,kernel_len=5,batch_norm=False)
+    print "NOT trying batch norm in the discriminator part that sees x!"
+    p = param_init_convlayer(options={},params=p,prefix='DC_1',nin=3,nout=32,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='DC_2',nin=32,nout=64,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='DC_3',nin=64,nout=128,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='DC_4',nin=128,nout=256,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='DC_5',nin=256,nout=512,kernel_len=5,batch_norm=False)
 
     p = param_init_fflayer(options={},params=p,prefix='D_1',nin=nl+512*4*4,nout=nfd,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='D_2',nin=nfd,nout=nfd,ortho=False,batch_norm=False)
@@ -155,14 +172,20 @@ def z_to_x(p,z):
 
 def x_to_z(p,x):
 
-    e1 = convlayer(tparams=p,state_below=x.reshape((64,3,32,32)),options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    e1 = convlayer(tparams=p,state_below=x.reshape((64,3,32,32)),options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
 
     e2 = convlayer(tparams=p,state_below=e1,options={},prefix='x_z_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    e3 = convlayer(tparams=p,state_below=e2,options={},prefix='x_z_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    e3 = convlayer(tparams=p,state_below=e2,options={},prefix='x_z_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
 
-    eo = e3
+    e4 = convlayer(tparams=p,state_below=e3,options={},prefix='x_z_4',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+
+    e5 = convlayer(tparams=p,state_below=e4,options={},prefix='x_z_5',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+
+    eo = e5
     eo = eo.flatten(2)
+
+    encoder_features = eo
 
     sigma = fflayer(tparams=p,state_below=eo,options={},prefix='x_z_mu',activ='lambda x: x')
     mu = fflayer(tparams=p,state_below=eo,options={},prefix='x_z_sigma',activ='lambda x: x')
@@ -174,18 +197,39 @@ def x_to_z(p,x):
 
     z_new = (z_new - T.mean(z_new, axis=0, keepdims=True)) / (0.001 + T.std(z_new, axis=0, keepdims=True))
 
-    return z_new
+    return z_new,encoder_features
 
+def classifier(p,z,true_y):
+
+    print "turning off gradients from classifier"
+    z = consider_constant(z)
+
+    h1 = fflayer(tparams=p,state_below=z,options={},prefix='c_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
+
+    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='c_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
+
+    y_est = fflayer(tparams=p,state_below=h2,options={},prefix='c_3',activ='lambda x: x')
+
+    y_est = T.nnet.softmax(y_est)
+
+    acc = accuracy(y_est,true_y)
+    loss = crossent(y_est,true_y)
+
+    return loss,acc
 
 def discriminator(p,x,z):
 
-    dc_1 = convlayer(tparams=p,state_below=x.reshape((64,3,32,32)),options={},prefix='DC_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    dc_1 = convlayer(tparams=p,state_below=x.reshape((64,3,32,32)),options={},prefix='DC_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
 
     dc_2 = convlayer(tparams=p,state_below=dc_1,options={},prefix='DC_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    dc_3 = convlayer(tparams=p,state_below=dc_2,options={},prefix='DC_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    dc_3 = convlayer(tparams=p,state_below=dc_2,options={},prefix='DC_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
 
-    inp = join2(z,dc_3.flatten(2))
+    dc_4 = convlayer(tparams=p,state_below=dc_3,options={},prefix='DC_4',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+
+    dc_5 = convlayer(tparams=p,state_below=dc_4,options={},prefix='DC_5',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+
+    inp = join2(z,dc_5.flatten(2))
 
     h1 = fflayer(tparams=p,state_below=inp,options={},prefix='D_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',mean_ln=False)
 
@@ -197,9 +241,9 @@ def discriminator(p,x,z):
     D2 = fflayer(tparams=p,state_below=h2,options={},prefix='D_o_2',activ='lambda x: x')
     D3 = fflayer(tparams=p,state_below=h3,options={},prefix='D_o_3',activ='lambda x: x')
 
-    D4 = convlayer(tparams=p,state_below=dc_1,options={},prefix='D_o_4',activ='lambda x: x',stride=2)
-    D5 = convlayer(tparams=p,state_below=dc_2,options={},prefix='D_o_5',activ='lambda x: x',stride=2)
-    D6 = convlayer(tparams=p,state_below=dc_3,options={},prefix='D_o_6',activ='lambda x: x',stride=2)
+    D4 = convlayer(tparams=p,state_below=dc_3,options={},prefix='D_o_4',activ='lambda x: x',stride=2)
+    D5 = convlayer(tparams=p,state_below=dc_4,options={},prefix='D_o_5',activ='lambda x: x',stride=2)
+    D6 = convlayer(tparams=p,state_below=dc_5,options={},prefix='D_o_6',activ='lambda x: x',stride=2)
 
     print "special thing in D"
     return [D1,D2,D3,D4,D5,D6], h3
@@ -219,12 +263,12 @@ def p_chain(p, z, num_iterations):
 
         new_x = z_to_x(p, zlst[-1])
         xlst.append(new_x)
-        new_z = x_to_z(p, consider_constant(xlst[-1]))
+        new_z,_ = x_to_z(p, consider_constant(xlst[-1]))
         zlst.append(new_z)
 
         new_x = z_to_x(p, zlst[-1])
         xlst.append(new_x)
-        new_z = x_to_z(p, consider_constant(xlst[-1]))
+        new_z,_ = x_to_z(p, consider_constant(xlst[-1]))
         zlst.append(new_z)
 
         new_x = z_to_x(p, zlst[-1])
@@ -235,7 +279,7 @@ def p_chain(p, z, num_iterations):
         for inds in range(0,num_iterations):
             new_x = z_to_x(p, zlst[-1])
             xlst.append(new_x)
-            new_z = x_to_z(p, xlst[-1])
+            new_z,_ = x_to_z(p, xlst[-1])
             zlst.append(new_z)
 
 
@@ -249,20 +293,21 @@ def onestep_z_to_x(p,z):
     return x
 
 def onestep_x_to_z(p,x):
-    new_z = x_to_z(p, inverse_sigmoid(x))
+    new_z,_ = x_to_z(p, inverse_sigmoid(x))
     return new_z
 
 def q_chain(p,x,num_iterations):
 
     xlst = [x]
     zlst = []
-    new_z = x_to_z(p, inverse_sigmoid(xlst[-1]))
+    new_z,encoder_features = x_to_z(p, inverse_sigmoid(xlst[-1]))
     zlst.append(new_z)
 
-    return xlst, zlst
+    return xlst, zlst,encoder_features
 
 gparams = init_gparams({})
 dparams = init_dparams({})
+cparams = init_cparams({})
 
 z_in = T.matrix('z_in')
 x_in = T.matrix()
@@ -270,21 +315,28 @@ true_y = T.ivector('true_y')
 
 p_lst_x,p_lst_z = p_chain(gparams, z_in, num_steps)
 
-q_lst_x,q_lst_z = q_chain(gparams, x_in, num_steps)
+q_lst_x,q_lst_z,encoder_features = q_chain(gparams, x_in, num_steps)
 
 p_lst_x_long,p_lst_z_long = p_chain(gparams, z_in, 19)
 
 z_inf = q_lst_z[-1]
 
-closs,cacc = classifier(cparams,z_inf,x_in,true_y)
-
 D_p_lst_1,_ = discriminator(dparams, p_lst_x[-1], p_lst_z[-1])
+
+if False:
+    D_p_lst_2,_ = discriminator(dparams, p_lst_x[-2], p_lst_z[-2])
+    D_p_lst = D_p_lst_1 + D_p_lst_2
+    print "double disc"
+else:
+    D_p_lst = D_p_lst_1
+    print "single disc"
 
 D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
 
-dloss, gloss = lsgan_loss(D_q_lst, D_p_lst_1)
+closs,cacc = classifier(cparams,join2(z_inf,encoder_features),true_y)
 
-print "single disc"
+dloss, gloss = lsgan_loss(D_q_lst, D_p_lst)
+
 print "not using improvement objective"
 #improvement_objective = improvement_loss_weight * improvement_loss(D_p_lst_1, D_p_lst_2)
 #gloss += improvement_objective
@@ -293,15 +345,20 @@ dupdates = lasagne.updates.rmsprop(dloss, dparams.values(),0.0001)
 gloss_grads = T.grad(gloss, gparams.values(), disconnected_inputs='ignore')
 gupdates = lasagne.updates.rmsprop(gloss_grads, gparams.values(),0.0001)
 
-gcupdates = lasagne.updates.rmsprop(gloss, gparams.values(),0.0001)
+gcupdates = lasagne.updates.rmsprop(gloss + closs, gparams.values() + cparams.values(),0.0001)
+dcupdates = lasagne.updates.rmsprop(dloss + closs, dparams.values() + cparams.values(),0.0001)
 
 dgupdates = dupdates.copy()
 dgupdates.update(gupdates)
 
-dgcupdates = dupdates.copy()
+dgcupdates = dcupdates.copy()
 dgcupdates.update(gcupdates)
 
 train_disc_gen_classifier = theano.function(inputs = [x_in, z_in,true_y], outputs=[dloss,p_lst_x[-1],p_lst_z[-1],closs,cacc], updates=dgcupdates,on_unused_input='ignore')
+
+train_disc_gen = theano.function(inputs = [x_in, z_in], outputs=[dloss,p_lst_x[-1],p_lst_z[-1]], updates=dgupdates,on_unused_input='ignore')
+
+test_classifier = theano.function(inputs = [x_in,true_y], outputs=[closs,cacc],on_unused_input='ignore')
 
 get_zinf = theano.function([x_in], outputs=z_inf)
 #get_dfeat = theano.function([x_in], outputs=D_feat_q)
@@ -340,21 +397,43 @@ if __name__ == '__main__':
             x_in = normalize(animeData.getBatch()).reshape((64,32*32*3))
 
         elif dataset == "svhn":
-            svhn_batch = svhnData.getBatch()
+
+            #just do a quick update using the whole thing.  
+            
+            ind = random.randint(0,574168-64)
+            svhn_batch = svhnData.getBatch(mb_size=64,index=ind,segment="train")
             x_in = normalize(svhn_batch['x']).reshape((64,32*32*3))
-            y_in = svhn_batch['y']
+            train_disc_gen(x_in,z_in)
 
-        dloss,gen_x,z_out_p = train_disc_gen_classifier(x_in,z_in,y_in)
+            if random.uniform(0,1) < 0.1:
+                ind = random.randint(0,num_labeled_examples_use)
+                svhn_batch = svhnData.getBatch(mb_size=64,index=ind,segment="hard_train")
+                x_in = normalize(svhn_batch['x']).reshape((64,32*32*3))
+                y_in = svhn_batch['y']
 
+                dloss,gen_x,z_out_p,closs,cacc = train_disc_gen_classifier(x_in,z_in,y_in)
 
-        print "iteration", iteration
-        print "dloss", dloss
-        print "gen_x mean", gen_x.mean()
+                print "iteration", iteration
+                print "dloss", dloss
+                print "gen_x mean", gen_x.mean()
+                print "closs", closs
+                print "cacc", cacc
 
         if iteration % 1000 == 0:
-            print "dloss", dloss
-            plot_images(gen_x, "plots/" + slurm_name + "_gen.png")
-            #plot_images(reconstruct(x_in).reshape((64,1,28,28)), "plots/" + slurm_name + "_rec.png")
+
+            if dataset == "svhn":
+                acclst = []
+                for ind in range(0,26032-128,64):
+                #ind = random.randint(0,26032-64)
+                    testbatch = svhnData.getBatch(index=ind,mb_size=64,segment="test")
+                    closs,cacc = test_classifier(normalize(testbatch['x']).reshape((64,32*32*3)),testbatch['y'])
+                    acclst.append(cacc)
+
+                print "all test data"
+                print "test accuracy", sum(acclst)*1.0/len(acclst)
+
+            #plot_images(gen_x, "plots/" + slurm_name + "_gen.png")
+            plot_images(func_z_to_x(func_x_to_z(x_in)).reshape((64,32*32*3)), "plots/" + slurm_name + "_rec.png")
 
             #NOT CORRECT INITIALLY
             #rec_loop = [x_in]
@@ -364,7 +443,10 @@ if __name__ == '__main__':
             #    plot_images(rec_loop[-1].reshape((64,1,28,28)), "plots/" + slurm_name + "_rec_" + str(b) +".png")
 
             plot_images(x_in, "plots/" + slurm_name + "_original.png")
-            
+ 
+            print "saving models"
+            pickle.dump({'gparams' : gparams, 'dparams' : dparams}, open("models/" + slurm_name + "_model.pkl", "w"), protocol=pickle.HIGHEST_PROTOCOL)
+
             #p_chain = get_pchain(z_in)
             new_z = rng.normal(size=(64,nl)).astype('float32')
             for j in range(0,20):
