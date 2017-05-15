@@ -54,8 +54,11 @@ def init_gparams(p):
     p = param_init_convlayer(options={},params=p,prefix='x_z_4',nin=128,nout=256,kernel_len=5,batch_norm=True)
     p = param_init_convlayer(options={},params=p,prefix='x_z_5',nin=256,nout=512,kernel_len=5,batch_norm=True)
 
-    p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=512*4*4,nout=nl,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=512*4*4,nout=nl,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='x_z_fc1',nin=512*4*4,nout=1024,ortho=False,batch_norm=True)
+    p = param_init_fflayer(options={},params=p,prefix='x_z_fc2',nin=1024,nout=1024,ortho=False,batch_norm=True)
+
+    p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=1024,nout=nl,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=1024,nout=nl,ortho=False,batch_norm=False)
 
     return init_tparams(p)
 
@@ -94,8 +97,8 @@ def init_dparams(p):
 
 def z_to_x(p,z):
 
-    print "extra noise input"
-    z_inp = join2(z, 1.0*srng.normal(size=z.shape))
+    print "no extra noise input"
+    z_inp = join2(z, 0.0*srng.normal(size=z.shape))
 
     d0 = fflayer(tparams=p,state_below=z_inp,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
 
@@ -128,8 +131,11 @@ def x_to_z(p,x):
 
     encoder_features = eo
 
-    sigma = fflayer(tparams=p,state_below=eo,options={},prefix='x_z_mu',activ='lambda x: x')
-    mu = fflayer(tparams=p,state_below=eo,options={},prefix='x_z_sigma',activ='lambda x: x')
+    h1 = fflayer(tparams=p,state_below=eo,options={},prefix='x_z_fc1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
+    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='x_z_fc2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
+
+    sigma = fflayer(tparams=p,state_below=h2,options={},prefix='x_z_mu',activ='lambda x: x')
+    mu = fflayer(tparams=p,state_below=h2,options={},prefix='x_z_sigma',activ='lambda x: x')
 
     eps = srng.normal(size=sigma.shape)
 
@@ -254,7 +260,6 @@ if __name__ == "__main__":
     nfg = 512
     nfd = 512
 
-    print "dataset", dataset
 
     #3
     num_steps = 3
@@ -272,6 +277,7 @@ if __name__ == "__main__":
     #dataset = "mnist"
     #dataset = "anime"
     dataset = "svhn"
+    print "dataset", dataset
 
     if dataset == "mnist":
         mn = gzip.open("/u/lambalex/data/mnist/mnist.pkl.gz")
