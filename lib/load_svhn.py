@@ -49,6 +49,11 @@ class SvhnData:
         all_train_X = all_train_X[permutation]
         all_train_Y = all_train_Y[permutation]
 
+        permutation = rng.permutation(extra_X.shape[0])
+
+        self.easy_X = extra_X[permutation]
+        self.easy_Y = extra_Y[permutation]
+
         self.train_X = all_train_X
         self.train_Y = all_train_Y
 
@@ -81,6 +86,9 @@ class SvhnData:
         elif segment == "hard_train":
             mb_x = self.hard_train_X[index : index + mb_size]
             mb_y = self.hard_train_Y[index : index + mb_size].flatten()
+        elif segment == "easy_train":
+            mb_x = self.easy_X[index : index + mb_size]
+            mb_y = self.easy_Y[index : index + mb_size].flatten()
 
         return {'x' : mb_x, 'y' : mb_y}
 

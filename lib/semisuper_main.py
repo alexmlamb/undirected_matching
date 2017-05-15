@@ -27,6 +27,7 @@ from viz import plot_images
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from sklearn import svm
 
 import os
 slurm_name = os.environ["SLURM_JOB_ID"]
@@ -37,67 +38,7 @@ class ConsiderConstant(theano.compile.ViewOp):
 
 consider_constant = ConsiderConstant()
 
-#dataset = "mnist"
-#dataset = "anime"
-dataset = "svhn"
 
-if dataset == "mnist":
-    mn = gzip.open("/u/lambalex/data/mnist/mnist.pkl.gz")
-
-    train, valid, test = pickle.load(mn)
-
-    trainx,trainy = train
-    
-    
-    #newtx = trainx[(trainy<2) | (trainy>8)]
-    #newty = trainy[(trainy<2) | (trainy>8)]
-    #trainx = newtx
-    #trainy = newty
-    
-    validx,validy = valid
-    testx, testy = test
-
-    num_examples = trainx.shape[0]
-
-    m = 784
-elif dataset == "anime":
-    from load_file import FileData, normalize, denormalize
-
-    loc = "/u/lambalex/DeepLearning/animefaces/datafaces/danbooru-faces/"
-
-    animeData = FileData(loc, 32, 64)
-
-    m = 32*32*3
-
-elif dataset == "svhn":
-
-    from load_svhn import SvhnData
-    from load_file import normalize, denormalize
-
-    svhnData = SvhnData()
-
-    num_examples = 50000
-
-nl = 128
-print "num latent", nl
-#128 works for nl
-nfg = 512
-nfd = 512
-
-print "dataset", dataset
-
-#3
-num_steps = 9
-print "num steps", num_steps
-
-latent_sparse = False
-print "latent sparse", latent_sparse
-
-improvement_loss_weight = 0.0
-print "improvement loss weight", improvement_loss_weight
-
-num_labeled_examples_use = 50000
-print "num labeled examples used",num_labeled_examples_use
 
 def init_gparams(p):
 
@@ -246,7 +187,7 @@ def discriminator(p,x,z):
     D6 = convlayer(tparams=p,state_below=dc_5,options={},prefix='D_o_6',activ='lambda x: x',stride=2)
 
     print "special thing in D"
-    return [D1,D2,D3,D4,D5,D6], h3
+    return [D1,D2,D3,D4,D5,D6], [h3,dc_5.flatten(2)]
 
 def p_chain(p, z, num_iterations):
     zlst = [z]
@@ -305,72 +246,137 @@ def q_chain(p,x,num_iterations):
 
     return xlst, zlst,encoder_features
 
-gparams = init_gparams({})
-dparams = init_dparams({})
-cparams = init_cparams({})
+if __name__ == "__main__":
 
-z_in = T.matrix('z_in')
-x_in = T.matrix()
-true_y = T.ivector('true_y')
+    nl = 128
+    print "num latent", nl
+    #128 works for nl
+    nfg = 512
+    nfd = 512
 
-p_lst_x,p_lst_z = p_chain(gparams, z_in, num_steps)
+    print "dataset", dataset
 
-q_lst_x,q_lst_z,encoder_features = q_chain(gparams, x_in, num_steps)
+    #3
+    num_steps = 3
+    print "num steps", num_steps
 
-p_lst_x_long,p_lst_z_long = p_chain(gparams, z_in, 19)
+    latent_sparse = False
+    print "latent sparse", latent_sparse
 
-z_inf = q_lst_z[-1]
+    improvement_loss_weight = 0.0
+    print "improvement loss weight", improvement_loss_weight
 
-D_p_lst_1,_ = discriminator(dparams, p_lst_x[-1], p_lst_z[-1])
+    num_labeled_examples_use = 50000
+    print "num labeled examples used",num_labeled_examples_use
 
-if False:
-    D_p_lst_2,_ = discriminator(dparams, p_lst_x[-2], p_lst_z[-2])
-    D_p_lst = D_p_lst_1 + D_p_lst_2
-    print "double disc"
-else:
-    D_p_lst = D_p_lst_1
-    print "single disc"
+    #dataset = "mnist"
+    #dataset = "anime"
+    dataset = "svhn"
 
-D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
+    if dataset == "mnist":
+        mn = gzip.open("/u/lambalex/data/mnist/mnist.pkl.gz")
 
-closs,cacc = classifier(cparams,join2(z_inf,encoder_features),true_y)
+        train, valid, test = pickle.load(mn)
 
-dloss, gloss = lsgan_loss(D_q_lst, D_p_lst)
+        trainx,trainy = train
 
-print "not using improvement objective"
-#improvement_objective = improvement_loss_weight * improvement_loss(D_p_lst_1, D_p_lst_2)
-#gloss += improvement_objective
 
-dupdates = lasagne.updates.rmsprop(dloss, dparams.values(),0.0001)
-gloss_grads = T.grad(gloss, gparams.values(), disconnected_inputs='ignore')
-gupdates = lasagne.updates.rmsprop(gloss_grads, gparams.values(),0.0001)
+        #newtx = trainx[(trainy<2) | (trainy>8)]
+        #newty = trainy[(trainy<2) | (trainy>8)]
+        #trainx = newtx
+        #trainy = newty
 
-gcupdates = lasagne.updates.rmsprop(gloss + closs, gparams.values() + cparams.values(),0.0001)
-dcupdates = lasagne.updates.rmsprop(dloss + closs, dparams.values() + cparams.values(),0.0001)
+        validx,validy = valid
+        testx, testy = test
 
-dgupdates = dupdates.copy()
-dgupdates.update(gupdates)
+        num_examples = trainx.shape[0]
 
-dgcupdates = dcupdates.copy()
-dgcupdates.update(gcupdates)
+        m = 784
 
-train_disc_gen_classifier = theano.function(inputs = [x_in, z_in,true_y], outputs=[dloss,p_lst_x[-1],p_lst_z[-1],closs,cacc], updates=dgcupdates,on_unused_input='ignore')
+    elif dataset == "anime":
+        from load_file import FileData, normalize, denormalize
 
-train_disc_gen = theano.function(inputs = [x_in, z_in], outputs=[dloss,p_lst_x[-1],p_lst_z[-1]], updates=dgupdates,on_unused_input='ignore')
+        loc = "/u/lambalex/DeepLearning/animefaces/datafaces/danbooru-faces/"
 
-test_classifier = theano.function(inputs = [x_in,true_y], outputs=[closs,cacc],on_unused_input='ignore')
+        animeData = FileData(loc, 32, 64)
 
-get_zinf = theano.function([x_in], outputs=z_inf)
-#get_dfeat = theano.function([x_in], outputs=D_feat_q)
+        m = 32*32*3
 
-#get_pchain = theano.function([z_in], outputs = p_lst_x_long)
+    elif dataset == "svhn":
 
-x_in = T.matrix()
+        from load_svhn import SvhnData
+        from load_file import normalize, denormalize
 
-func_z_to_x = theano.function([z_in], outputs = onestep_z_to_x(gparams, z_in))
-func_x_to_z = theano.function([x_in], outputs = onestep_x_to_z(gparams, x_in))
+        svhnData = SvhnData()
 
-if __name__ == '__main__':
+        num_examples = 50000
+
+
+
+    gparams = init_gparams({})
+    dparams = init_dparams({})
+    cparams = init_cparams({})
+
+    z_in = T.matrix('z_in')
+    x_in = T.matrix()
+    true_y = T.ivector('true_y')
+
+    p_lst_x,p_lst_z = p_chain(gparams, z_in, num_steps)
+
+    q_lst_x,q_lst_z,encoder_features = q_chain(gparams, x_in, num_steps)
+
+    p_lst_x_long,p_lst_z_long = p_chain(gparams, z_in, 19)
+
+    z_inf = q_lst_z[-1]
+
+    D_p_lst_1,_ = discriminator(dparams, p_lst_x[-1], p_lst_z[-1])
+
+    if False:
+        D_p_lst_2,_ = discriminator(dparams, p_lst_x[-2], p_lst_z[-2])
+        D_p_lst = D_p_lst_1 + D_p_lst_2
+        print "double disc"
+    else:
+        D_p_lst = D_p_lst_1
+        print "single disc"
+
+    D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
+
+    closs,cacc = classifier(cparams,join2(z_inf,encoder_features),true_y)
+
+    dloss, gloss = lsgan_loss(D_q_lst, D_p_lst)
+
+    print "not using improvement objective"
+    #improvement_objective = improvement_loss_weight * improvement_loss(D_p_lst_1, D_p_lst_2)
+    #gloss += improvement_objective
+
+    dupdates = lasagne.updates.rmsprop(dloss, dparams.values(),0.0001)
+    gloss_grads = T.grad(gloss, gparams.values(), disconnected_inputs='ignore')
+    gupdates = lasagne.updates.rmsprop(gloss_grads, gparams.values(),0.0001)
+
+    gcupdates = lasagne.updates.rmsprop(gloss + closs, gparams.values() + cparams.values(),0.0001)
+    dcupdates = lasagne.updates.rmsprop(dloss + closs, dparams.values() + cparams.values(),0.0001)
+
+    dgupdates = dupdates.copy()
+    dgupdates.update(gupdates)
+
+    dgcupdates = dcupdates.copy()
+    dgcupdates.update(gcupdates)
+
+    train_disc_gen_classifier = theano.function(inputs = [x_in, z_in,true_y], outputs=[dloss,p_lst_x[-1],p_lst_z[-1],closs,cacc], updates=dgcupdates,on_unused_input='ignore')
+
+    train_disc_gen = theano.function(inputs = [x_in, z_in], outputs=[dloss,p_lst_x[-1],p_lst_z[-1]], updates=dgupdates,on_unused_input='ignore')
+
+    test_classifier = theano.function(inputs = [x_in,true_y], outputs=[closs,cacc],on_unused_input='ignore')
+
+    get_zinf = theano.function([x_in], outputs=z_inf)
+    #get_dfeat = theano.function([x_in], outputs=D_feat_q)
+
+    #get_pchain = theano.function([z_in], outputs = p_lst_x_long)
+
+    x_in = T.matrix()
+
+    func_z_to_x = theano.function([z_in], outputs = onestep_z_to_x(gparams, z_in))
+    func_x_to_z = theano.function([x_in], outputs = onestep_x_to_z(gparams, x_in))
 
     z_out_p = rng.normal(size=(64,nl)).astype('float32')
 
