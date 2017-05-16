@@ -59,65 +59,6 @@ R_NONLINEARITY = None
 MODULE = None
 
 consider_constant = theano.gradient.disconnected_grad # changed from orginal
-
-
-def update_dict_of_lists(d_to_update, **d):
-    '''Updates a dict of list with kwargs.
-
-    Args:
-        d_to_update (dict): dictionary of lists.
-        **d: keyword arguments to append.
-
-    '''
-    for k, v in d.iteritems():
-        if k in d_to_update.keys():
-            d_to_update[k].append(v)
-        else:
-            d_to_update[k] = [v]
-
-# PRETTY -----------------------------------------------------------------------
-
-try:
-    _, _columns = os.popen('stty size', 'r').read().split()
-    _columns = int(_columns)
-except ValueError:
-    _columns = 1
-
-def print_section(s):
-    '''For printing sections to scripts nicely.
-
-    Args:
-        s (str): string of section
-
-    '''
-    h = s + ('-' * (_columns - len(s)))
-    print h
-
-# OPTIMIZER --------------------------------------------------------------------
-
-def set_optimizer(dloss, gloss, dparams, gparams,
-                  optimizer=None, op_args=None):
-    '''Sets the loss and optimizer and gets updates
-    
-    '''
-    op_args = op_args or {}
-    
-    logger.info("Setting optimizer. Using {} with args {}".format(
-        optimizer, op_args))
-    
-    if optimizer == 'rmsprop':
-        dupdates = lasagne.updates.rmsprop(dloss, dparams.values(), **op_args)
-        gcupdates = lasagne.updates.rmsprop(gloss, gparams.values(), **op_args)
-    elif optimizer == 'adam':
-        dupdates = lasagne.updates.adam(dloss, dparams.values(), **op_args)
-        gcupdates = lasagne.updates.adam(gloss, gparams.values(), **op_args)
-    else:
-        raise NotImplementedError(optimizer)
-
-    dgcupdates = dupdates.copy()
-    dgcupdates.update(gcupdates)
-    
-    return dgcupdates
     
 # COMPILE ----------------------------------------------------------------------
     
@@ -129,10 +70,9 @@ def compile_train(updates, inputs, outputs):
     
     return f
 
-
-def compile_generation(z, x, y):
+def compile_generation(z, outputs):
     logger.info("Compiling generation function")
-    f = theano.function([z], [x, y])
+    f = theano.function([z], outputs=outputs)
     return f
 
 
@@ -273,7 +213,6 @@ def q_chain(p, x, y, num_iterations, test=False, **model_args):
     ylst = [y]
     zlst = []
     
-    #x_ = inverse_sigmoid(x)
     x_ = x
     
     if MODULE._semi_supervised:

@@ -59,15 +59,114 @@ DIM_L = None
 R_NONLINEARITY = None
 MODULE = None
 ATTRIBUTE_NAMES =[
-    '5_o_Clock_Shadow', 'Arched_Eyebrows', 'Attractive', 'Bags_Under_Eyes',
-    'Bald', 'Bangs', 'Big_Lips', 'Big_Nose', 'Black_Hair', 'Blond_Hair',
-    'Blurry', 'Brown_Hair', 'Bushy_Eyebrows', 'Chubby', 'Double_Chin',
-    'Eyeglasses', 'Goatee', 'Gray_Hair', 'Heavy_Makeup', 'High_Cheekbones',
-    'Male', 'Mouth_Slightly_Open', 'Mustache', 'Narrow_Eyes', 'No_Beard',
-    'Oval_Face', 'Pale_Skin', 'Pointy_Nose', 'Receding_Hairline', 'Rosy_Cheeks',
-    'Sideburns', 'Smiling', 'Straight_Hair', 'Wavy_Hair', 'Wearing_Earrings',
-    'Wearing_Hat', 'Wearing_Lipstick', 'Wearing_Necklace', 'Wearing_Necktie',
+    '5 o Clock Shadow', 'Arched Eyebrows', 'Attractive', 'Bags Under Eyes',
+    'Bald', 'Bangs', 'Big Lips', 'Big Nose', 'Black Hair', 'Blond Hair',
+    'Blurry', 'Brown Hair', 'Bushy Eyebrows', 'Chubby', 'Double Chin',
+    'Eyeglasses', 'Goatee', 'Gray Hair', 'Heavy Makeup', 'High Cheekbones',
+    'Male', 'Mouth Slightly Open', 'Mustache', 'Narrow Eyes', 'No Beard',
+    'Oval Face', 'Pale Skin', 'Pointy Nose', 'Receding Hairline', 'Rosy Cheeks',
+    'Sideburns', 'Smiling', 'Straight Hair', 'Wavy Hair', 'Wearing Earrings',
+    'Wearing Hat', 'Wearing Lipstick', 'Wearing Necklace', 'Wearing Necktie',
     'Young'] # for CelebA
+
+CHAR_MAP = {0: '_',
+ 1: '\n',
+ 2: ' ',
+ 3: '!',
+ 4: '"',
+ 5: '%',
+ 6: '&',
+ 7: "'",
+ 8: '(',
+ 9: ')',
+ 10: ',',
+ 11: '-',
+ 12: '.',
+ 13: '/',
+ 14: '0',
+ 15: '1',
+ 16: '2',
+ 17: '3',
+ 18: '4',
+ 19: '5',
+ 20: '8',
+ 21: '9',
+ 22: ':',
+ 23: ';',
+ 24: '=',
+ 25: '?',
+ 26: '\\',
+ 27: '`',
+ 28: 'a',
+ 29: 'b',
+ 30: 'c',
+ 31: 'd',
+ 32: 'e',
+ 33: 'f',
+ 34: 'g',
+ 35: 'h',
+ 36: 'i',
+ 37: 'j',
+ 38: 'k',
+ 39: 'l',
+ 40: 'm',
+ 41: 'n',
+ 42: 'o',
+ 43: 'p',
+ 44: 'q',
+ 45: 'r',
+ 46: 's',
+ 47: 't',
+ 48: 'u',
+ 49: 'v',
+ 50: 'w',
+ 51: 'x',
+ 52: 'y',
+ 53: 'z',
+ 54: '*',
+ 55: '*',
+ 56: '*'}
+
+#0: '5_o_Clock_Shadow'
+#1: 'Arched_Eyebrows'
+#2: 'Attractive'
+#3: 'Bags_Under_Eyes'
+#4: 'Bald'
+#5: 'Bangs'
+#6: 'Big_Lips',
+#7: 'Big_Nose',
+#8: 'Black_Hair',
+#9: 'Blond_Hair',
+#10: 'Blurry',
+#11: 'Brown_Hair',
+#12: 'Bushy_Eyebrows',
+#13: 'Chubby',
+#14: 'Double_Chin',
+#15: 'Eyeglasses',
+#16: 'Goatee',
+#17: 'Gray_Hair',
+#18: 'Heavy_Makeup',
+#19: 'High_Cheekbones',
+#20: 'Male',
+#21: 'Mouth_Slightly_Open',
+#22: 'Mustache',
+#23: 'Narrow_Eyes',
+#24: 'No_Beard',
+#25: 'Oval_Face',
+#26: 'Pale_Skin',
+#27: 'Pointy_Nose',
+#28: 'Receding_Hairline',
+#29: 'Rosy_Cheeks',
+#30: 'Sideburns',
+#31: 'Smiling',
+#32: 'Straight_Hair',
+#33: 'Wavy_Hair',
+#34: 'Wearing_Earrings',
+#35: 'Wearing_Hat',
+#36: 'Wearing_Lipstick',
+#37: 'Wearing_Necklace',
+#38: 'Wearing_Necktie',    
+#39: 'Young'
 
 
 def update_dict_of_lists(d_to_update, **d):
@@ -477,14 +576,15 @@ def make_model(num_steps=None, pd_steps=None, loss=None,
 
 # DATA -------------------------------------------------------------------------
 
-def prepare_data(source, pad_to=None, batch_size=None, tanh=None, **kwargs):
+def prepare_data(source, pad_to=None, batch_size=None, tanh=None,
+                 max_length=None, **kwargs):
     logger.info('Perparing data from `{}`'.format(source))
     global DIM_X, DIM_Y, DIM_C, DIM_L, DIM_W
     
     if source is None: raise ValueError('Source must be provided.')
     
     datasets, data_shapes = load_stream(source=source, batch_size=batch_size,
-                                        tanh=tanh)
+                                        tanh=tanh, max_length=max_length)
     if pad_to is not None:
         logger.info('Padding data to {}'.format(pad_to))
         for k in datasets.keys():
@@ -496,7 +596,7 @@ def prepare_data(source, pad_to=None, batch_size=None, tanh=None, **kwargs):
             data_shape = (data_shape[0], data_shape[1], pad_to[0], pad_to[1])
             data_shapes[k] = tuple([data_shape] + list(data_shapes[k])[1:])
 
-    shape = data_shapes['train'][0]
+    shape = data_shapes['train']['features']
     
     logger.info('Setting DIM_X to {}, DIM_Y to {}, and DIM_C to {}'.format(
         shape[2], shape[3], shape[1]))
@@ -505,13 +605,19 @@ def prepare_data(source, pad_to=None, batch_size=None, tanh=None, **kwargs):
     DIM_Y = shape[3]
     DIM_C = shape[1]
     
-    shape = data_shapes['train'][1]
+    shape = data_shapes['train']['captions']
+    logger.info('Setting DIM_W to {}'.format(max_length))
+    DIM_L = 57
+    DIM_W = max_length
+    
+    '''
     logger.info('Setting DIM_W to {}'.format(shape[1]))
     if len(shape) == 2:
         DIM_L = 2
         DIM_W = shape[1]
     else:
         raise NotImplementedError()
+    '''
     
     return datasets, data_shapes
 
@@ -528,7 +634,7 @@ def train(train_fn, gen_fn,
     
     '''
     
-    train_samples = data_shapes['train'][0][0]
+    train_samples = data_shapes['train']['features'][0]
     z_out_p = None
     results = {}
     
@@ -545,7 +651,8 @@ def train(train_fn, gen_fn,
         label_ = None
         
         for batch in iterator:
-            x_in, label = batch
+            #x_in, label = batch
+            label, x_in = batch
             if x_in_ is None:
                 x_in_ = x_in
                 label_ = label
@@ -602,40 +709,23 @@ def train(train_fn, gen_fn,
         z_im = rng.normal(size=(64, DIM_Z)).astype(floatX)
         x_gen, y_gen = gen_fn(z_im)
         x_gen = R_NONLINEARITY(x_gen)
-        #x_chain = chain_fn(z_im)
-        #x_chain = x_chain[:(len(x_chain) // 2)]
-        #x_y_chain = inpaint_fn_y(x_in_[:64], z_im)
-        attr_lab = np.eye(DIM_W).astype(floatX)
-        attr_lab = np.concatenate([1. - attr_lab[:, :, None],
-                                   attr_lab[:, :, None]], axis=2)
-        
-        y_x_chain = inpaint_fn_x(attr_lab, z_im[:40])
-        #x_y_chain = np.array([np.argmax(x_y, axis=1) for x_y in x_y_chain]).transpose(1, 0)
-        
-        '''
-        xy_labels = []
-        for c in x_y_chain:
-            prob = np.bincount(c, minlength=DIM_L) / float(c.shape[0])
-            args = np.argsort(prob)[::-1]
-            s = np.sort(prob)[::-1]
-            lab = ', '.join(['{}({:.2f})'.format(a_, s_)
-                             for a_, s_ in zip(args, s)][:2])
-            xy_labels.append(lab)
-        '''
         
         lab = np.argmax(y_gen, axis=2)
-        lab = [','.join([str(c) for c in np.where(l_ == 1)[0].tolist()]) for l_ in lab]
+        lab = [l_[:(l_.tolist().index(1) if 1 in l_ else len(l_))] for l_ in lab]
+        lab = [[''.join([CHAR_MAP[c] for c in l_])] for l_ in lab]
         plot_images(
-            x_gen, path.join(image_dir, 'gen_epoch_{}'.format(epoch)),
-            labels=lab)
+            X=x_gen, file_path=path.join(image_dir, 'gen_epoch_{}'.format(epoch)),
+            captions=lab)
         lab = np.argmax(label_[:64], axis=2)
-        lab = [','.join([str(c) for c in np.where(l_ == 1)[0].tolist()]) for l_ in lab]
-        plot_images(R_NONLINEARITY(x_in_[:64]), path.join(image_dir, 'gt'),
-                    labels=lab)
+        lab = [l_[:(l_.tolist().index(1) if 1 in l_ else len(l_))] for l_ in lab]
+        lab = [[''.join([CHAR_MAP[c] for c in l_])] for l_ in lab]
+        plot_images(X=R_NONLINEARITY(x_in_[:64]), file_path=path.join(image_dir, 'gt'),
+                    captions=lab)
+        
         #lab = [np.where(l_ == 1)[0].tolist() for l_ in xy_labels]
         #plot_images(R_NONLINEARITY(x_in_[:64]), path.join(image_dir, 'gt_y'),
         #            labels=lab)
-        
+        '''
         chain = []
         for x in y_x_chain:
             x = x.reshape(8, 5, DIM_C, DIM_X, DIM_Y)
@@ -645,7 +735,7 @@ def train(train_fn, gen_fn,
             chain.append(x)
         
         imageio.mimsave(path.join(image_dir, 'gen_y_x_chain.gif'), chain)
-        
+        '''
         '''
         chain = []
         for x in x_chain_x:
@@ -678,7 +768,8 @@ _optimizer_defaults = dict(
 _data_defaults = dict(
     batch_size=64,
     pad_to=None,#(32, 32),
-    nonlinearity='tanh'
+    nonlinearity='tanh',
+    max_length=64,
 )
 
 _train_defaults = dict(
@@ -691,7 +782,7 @@ _train_defaults = dict(
 )
 
 _visualize_defaults = dict(
-    num_steps_long=40,
+    num_steps_long=4,
     visualize_every_update=0, # Not used yet
     noise_damping=0.9
 )
@@ -715,7 +806,7 @@ def test(datasets, num_steps=None, pd_steps=None, loss=None,
     logger.info("Setting input variables")
     x_in = T.tensor4('x_in')
     z_in = T.matrix('z_in')
-    y_in = T.matrix('y_in')
+    y_in = T.tensor3('y_in')
     inputs = [x_in, z_in, y_in]
     
     d = MODULE.z_to_x(gparams, z_in, return_tensors=True, **model_args)
@@ -726,7 +817,7 @@ def test(datasets, num_steps=None, pd_steps=None, loss=None,
         x = d['x_f']
         p = d['y_f']
         z = d['z_f']
-        p_e = T.tile(p[None, :, :], (n_samples, 1, 1))
+        p_e = T.tile(p[None, :, :, :], (n_samples, 1, 1, 1))
         d['p_e'] = p_e
         p_r = p_e.reshape((-1, DIM_L))
         d['p_r'] = p_r
@@ -746,13 +837,14 @@ def test(datasets, num_steps=None, pd_steps=None, loss=None,
         d.update(**MODULE.discriminator(
             dparams, x_r, y_r, z_r,
             return_tensors=True, **model_args))
-        
+        '''
         dloss, gloss = bgan_loss_2(
             [d['d_ff_1']], [d['d_conv_1'].reshape((n_samples, x.shape[0], -1))], y, p)
         d['dloss'] = dloss
         d['gloss'] = gloss
+        '''
     
-    x, y = datasets['train'].get_epoch_iterator().next()
+    y, x = datasets['train'].get_epoch_iterator().next()
     z = rng.normal(size=(x.shape[0], DIM_Z)).astype(floatX)
     
     for k, v in d.items():

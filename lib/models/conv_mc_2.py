@@ -17,7 +17,7 @@ from nn_layers import (
 from utils import init_tparams, join2, srng
 
 
-logger = logging.getLogger('UDGAN.conv_mc_1')
+logger = logging.getLogger('UDGAN.conv_mc_2')
 
 _semi_supervised = True
 _defaults = dict(
@@ -61,19 +61,24 @@ def init_gparams(p, n_levels=3, dim_z=128, dim_h=128, dim_c=3, dim_x=32,
     p = param_init_fflayer(
         params=p, prefix='z_x_ff', nin=dim_in,
         nout=(dim_h * dim_x * dim_y // scale), ortho=False,
-        batch_norm=False)
+        batch_norm=True)
 
     dim_in = dim_h * scale
     for level in xrange(n_levels):
         name = 'z_x_conv_{}'.format(level)
         if level == n_levels - 1:
             dim_out = dim_c
+            batch_norm = False
         else:
             dim_out = dim_in // 2
+            batch_norm = True
+
+        logger.debug('Generator z-x dim in / out: {}-{}'.format(
+            dim_in, dim_out))
         
         p = param_init_convlayer(
             params=p, prefix=name, nin=dim_in, nout=dim_out,
-            kernel_len=5, batch_norm=True)
+            kernel_len=5, batch_norm=batch_norm)
         dim_in = dim_out
         
     # X-Z Pathway
@@ -81,7 +86,7 @@ def init_gparams(p, n_levels=3, dim_z=128, dim_h=128, dim_c=3, dim_x=32,
         
     p = param_init_fflayer(
         params=p, prefix='n_z_ff_x', nin=dim_z,
-        nout=dim_h * dim_x * dim_y // 4, ortho=False, batch_norm=False)
+        nout=dim_h * dim_x * dim_y // 4, ortho=False, batch_norm=True)
         
     for level in xrange(n_levels):
         name = 'x_z_conv_{}'.format(level)
@@ -90,10 +95,13 @@ def init_gparams(p, n_levels=3, dim_z=128, dim_h=128, dim_c=3, dim_x=32,
             dim_out = dim_h
         else:
             dim_out = dim_in * 2
+
+        logger.debug('Generator x-z dim in / out: {}-{}'.format(
+            dim_in, dim_out))
         
         p = param_init_convlayer(
             params=p, prefix=name, nin=dim_in, nout=dim_out,
-            kernel_len=5, batch_norm=(level != 0))
+            kernel_len=5, batch_norm=True)
         dim_in = dim_out
         
     # Z-Y Pathway
@@ -104,15 +112,17 @@ def init_gparams(p, n_levels=3, dim_z=128, dim_h=128, dim_c=3, dim_x=32,
         name = 'z_y_ff_{}'.format(level)
         if level == 1:
             dim_out = dim_l * dim_w
+            batch_norm = False
         else:
             dim_out = dim_in // 2
+            batch_norm = True
             
         logger.debug('Generator z-y dim in / out: {}-{}'.format(
             dim_in, dim_out))
         
         p = param_init_fflayer(
             params=p, prefix=name, nin=dim_in, nout=dim_out,
-            batch_norm=(level != 0))
+            batch_norm=batch_norm)
         dim_in = dim_out
         
     # Y-Z Pathway
@@ -120,7 +130,7 @@ def init_gparams(p, n_levels=3, dim_z=128, dim_h=128, dim_c=3, dim_x=32,
         
     p = param_init_fflayer(
         params=p, prefix='n_z_ff_y', nin=dim_z,
-        nout=dim_h // 2, ortho=False, batch_norm=False)
+        nout=dim_h // 2, ortho=False, batch_norm=True)
         
     for level in xrange(2):
         name = 'y_z_ff_{}'.format(level)
@@ -134,7 +144,7 @@ def init_gparams(p, n_levels=3, dim_z=128, dim_h=128, dim_c=3, dim_x=32,
         
         p = param_init_fflayer(
             params=p, prefix=name, nin=dim_in, nout=dim_out,
-            batch_norm=(level != 0))
+            batch_norm=True)
         dim_in = dim_out
         
     # Final Z Pathway
@@ -187,13 +197,14 @@ def init_dparams(p, n_levels=3, dim_z=128, dim_h=128, dim_hd=512, dim_c=3,
 
         p = param_init_convlayer(
             params=p, prefix=name, nin=dim_in, nout=dim_out,
-            kernel_len=5, batch_norm=(level != 0))
-        
+            kernel_len=5, batch_norm=False)
+        '''
         if multi_discriminator:
             name_out = 'd_conv_out_{}'.format(level)
             p = param_init_convlayer(
                 params=p, prefix=name_out, nin=dim_out, nout=1,
-                kernel_len=5, batch_norm=False)        
+                kernel_len=5, batch_norm=False)
+        '''
 
         dim_in = dim_out
     
@@ -205,12 +216,8 @@ def init_dparams(p, n_levels=3, dim_z=128, dim_h=128, dim_hd=512, dim_c=3,
     '''
         
     p = param_init_fflayer(
-        params=p, prefix='d_ff_y1', nin=dim_l * dim_w, nout=dim_h,
+        params=p, prefix='d_ff_y', nin=dim_l*dim_w, nout=dim_h,
         ortho=False, batch_norm=False)
-    
-    p = param_init_fflayer(
-        params=p, prefix='d_ff_y2', nin=dim_h, nout=dim_h,
-        ortho=False, batch_norm=True)
 
     for level in xrange(2):
         name = 'd_ff_{}'.format(level)
@@ -219,14 +226,17 @@ def init_dparams(p, n_levels=3, dim_z=128, dim_h=128, dim_hd=512, dim_c=3,
             #dim_in = 2 * dim_h + dim_z
             dim_in = dim_h * scale * dim_x // scale * dim_y // scale // 2 + dim_h + dim_z
             
-        dim_out = dim_hd
+        if level == 1:
+            dim_out = 1
+        else:
+            dim_out = dim_hd
             
         logger.debug('Discriminator ff dim in / out: {}-{}'.format(
             dim_in, dim_out))
         
         p = param_init_fflayer(
             params=p, prefix=name, nin=dim_in, nout=dim_out,
-            ortho=False, batch_norm=True)
+            ortho=False, batch_norm=False)
 
         if multi_discriminator or level == 1:
             name_out = 'd_ff_out_{}'.format(level)
@@ -235,7 +245,6 @@ def init_dparams(p, n_levels=3, dim_z=128, dim_h=128, dim_hd=512, dim_c=3,
                 ortho=False, batch_norm=False)
 
         dim_in = dim_out
-        dim_out = dim_out // 2
     
     return init_tparams(p)
 
@@ -397,7 +406,7 @@ def discriminator(p, x, y, z, n_levels=3, dim_z=128, dim_h=128, dim_hd=512,
             tparams=p, state_below=h, prefix=name, activ=activ,
             stride=2)
         outs['h_conv_{}'.format(level)] = h
-        
+        '''
         if multi_discriminator:
             name_out = 'd_conv_out_{}'.format(level)
             d = convlayer(
@@ -405,14 +414,10 @@ def discriminator(p, x, y, z, n_levels=3, dim_z=128, dim_h=128, dim_hd=512,
                 activ='lambda x: x', stride=2)
             ds.append(d)
             outs['d_conv_{}'.format(level)] = d
-        
+        '''
     y = y.reshape((-1, dim_w * dim_l))
     h_y = fflayer(
-        tparams=p, state_below=y, prefix='d_ff_y1', activ=activ,
-        mean_ln=False)
-    
-    h_y = fflayer(
-        tparams=p, state_below=h_y, prefix='d_ff_y2', activ=activ,
+        tparams=p, state_below=y, prefix='d_ff_y', activ=activ,
         mean_ln=False)
     
     h = h.flatten(2)

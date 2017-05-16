@@ -71,8 +71,13 @@ def deconv(X, w, subsample=(1, 1), border_mode=(0, 0), conv_mode='conv'):
     return d_img
 
 
-def param_init_convlayer(options,params,prefix='ff',nin=None,nout=None,kernel_len=5,ortho=True,batch_norm=False):
-    params[prefix+"_W"] = 0.01 * rng.normal(size=(nout,nin,kernel_len,kernel_len)).astype('float32')
+def param_init_convlayer(params, prefix='ff', nin=None, nout=None,
+                         kernel_len=5, ortho=True, batch_norm=False):
+    logger.debug('Conv layer `{}` dim in / out: {}-{} with parameters'.format(
+        prefix, nin, nout, dict(ortho=ortho, batch_norm=batch_norm,
+                                      kernel_len=kernel_len)))
+    params[prefix+"_W"] = 0.01 * rng.normal(
+        size=(nout,nin,kernel_len,kernel_len)).astype('float32')
     params[prefix+"_b"] = np.zeros(shape=(nout,)).astype('float32')
 
     if batch_norm:
@@ -81,7 +86,7 @@ def param_init_convlayer(options,params,prefix='ff',nin=None,nout=None,kernel_le
 
     return params
 
-def convlayer(tparams, state_below, options,prefix='rconv',
+def convlayer(tparams, state_below ,prefix='rconv',
               activ='lambda x: tensor.tanh(x)', stride=None,
               bn_mean=None, bn_sigma=None):
     logger.debug('Forming layer with name {}'.format(prefix))
@@ -130,14 +135,14 @@ def convlayer(tparams, state_below, options,prefix='rconv',
 
 
 # feedforward layer: affine transformation + point-wise nonlinearity
-def param_init_fflayer(options,
-                       params,
+def param_init_fflayer(params,
                        prefix='ff',
                        nin=None,
                        nout=None,
                        ortho=True,
                        batch_norm=False):
-
+    logger.debug('Dense layer `{}` dim in / out: {}-{} with parameters'.format(
+        prefix, nin, nout, dict(ortho=ortho, batch_norm=batch_norm)))
     if batch_norm:
         params[prefix + '_newmu'] = np.zeros(shape=(nout,)).astype('float32')
         params[prefix + '_newsigma'] = np.ones(shape=(nout,)).astype('float32')
@@ -149,7 +154,6 @@ def param_init_fflayer(options,
 
 def fflayer(tparams,
             state_below,
-            options,
             prefix='rconv',
             activ='lambda x: tensor.tanh(x)',
             weight_norm = False,
