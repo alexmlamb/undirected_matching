@@ -456,7 +456,7 @@ get_z = func_x_to_z
 
 
 
-# In[7]:
+# In[6]:
 
 #get_dz(x)[0].shape
 
@@ -466,7 +466,7 @@ get_z = func_x_to_z
 
 
 
-# In[8]:
+# In[7]:
 
 zstats = []
 dzstats = []
@@ -529,7 +529,7 @@ for iteration in range(0,500000):
             print "test accuracy", sum(acclst)*1.0/len(acclst)
 
         #######plot_images(gen_x, "plots/" + slurm_name + "_gen.png")
-        plot_images(func_z_to_x(func_x_to_z(x_in)).reshape((64,32*32*3)), "plots/" + slurm_name + "_rec.png")
+        plot_images(func_z_to_x(func_x_to_z(x_in2)).reshape((64,32*32*3)), "plots/" + slurm_name + "_rec.png")
 
 
 
@@ -601,7 +601,7 @@ for iteration in range(0,500000):
         trainacc = np.mean(np.equal(Y_train, y_pred))
         #print "training accuracy", trainacc
 
-        print time.time() - t0, "total time to run"
+        #print time.time() - t0, "total time to run"
         
         print "###d#",iteration, "testacc", testacc, "trainacc", trainacc
         zstats.append([testacc, trainacc])
@@ -610,10 +610,10 @@ for iteration in range(0,500000):
         
         ##### ZZZZZZZ
         
-        X_train = np.vstack(dzhlst)
+        X_train = np.vstack(zhlst)
         Y_train = np.vstack(ylst).flatten()
 
-        X_test = np.vstack(dzhlst_test)
+        X_test = np.vstack(zhlst_test)
         Y_test = np.vstack(ylst_test).flatten()
 
 
@@ -635,11 +635,13 @@ for iteration in range(0,500000):
         trainacc = np.mean(np.equal(Y_train, y_pred))
         #print "training accuracy", trainacc
 
-        print time.time() - t0, "total time to run"
         
         print "###dz#",iteration, "testacc", testacc, "trainacc", trainacc
         dzstats.append([testacc, trainacc])
         
+        statsname = "stats.pkl"
+        pickle.dump([zstats,dzstats], open(statsname, "w", 0))
+        print "wrote", statsname, time.time() - t0, "total time to run"
         
 
 
@@ -666,12 +668,19 @@ get_ipython().magic(u'matplotlib inline')
 
 # In[ ]:
 
-plt.plot(np.asarray(dzstats))
+plt.plot(np.asarray(dzstats)[:,1], label="Disc Train", linestyle='--')
+
+plt.plot(np.asarray(dzstats)[:,0], label="Disc Test", linestyle='--')
+
+# plt.plot(np.asarray(zstats)[:,1], label="Train", linestyle='-')
+# plt.plot(np.asarray(zstats)[:,0], label="Test", linestyle='-')
+
+plt.legend()
 
 
 # In[ ]:
 
-plt.plot(np.asarray(zstats))
+
 
 
 # In[ ]:
