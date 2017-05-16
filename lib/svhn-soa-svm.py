@@ -610,10 +610,10 @@ for iteration in range(0,500000):
         
         ##### ZZZZZZZ
         
-        X_train = np.vstack(zhlst)
+        X_train = np.vstack(dhlst)
         Y_train = np.vstack(ylst).flatten()
 
-        X_test = np.vstack(zhlst_test)
+        X_test = np.vstack(dhlst_test)
         Y_test = np.vstack(ylst_test).flatten()
 
 
