@@ -270,6 +270,36 @@ print "a"
 
 
 
+# In[34]:
+
+import pickle, os
+
+directory = "network-temp/"
+ext = "svhn-soa-svm.p"
+
+if not os.path.exists(directory):
+    os.makedirs(directory)
+    
+def save_network(gparams,dparams, cparams,name):
+    pkl_params = (gparams,dparams, cparams)
+    out = open(directory + str(name) + ext, "w", 0) #bufsize=0
+    pickle.dump(pkl_params, out)
+    out.close()
+
+def load_network(name):
+    return pickle.load(open(directory + str(name) + ext, "r" ))
+
+
+# In[ ]:
+
+
+
+
+# In[ ]:
+
+
+
+
 # In[3]:
 
 nl = 128
@@ -434,7 +464,7 @@ from sklearn import svm
 import time
 
 
-# In[5]:
+# In[45]:
 
 input_x = T.matrix('x')
 
@@ -640,8 +670,13 @@ for iteration in range(0,500000):
         dzstats.append([testacc, trainacc])
         
         statsname = "stats.pkl"
+        print "writing", statsname, time.time() - t0, "total time to run"
+
         pickle.dump([zstats,dzstats], open(statsname, "w", 0))
-        print "wrote", statsname, time.time() - t0, "total time to run"
+        
+        paramsfile = str(iteration) + "baseparamsfile"
+        print "writing"
+        save_network(gparams,dparams, cparams,paramsfile)
         
 
 
@@ -651,7 +686,7 @@ for iteration in range(0,500000):
 
 
 
-# In[ ]:
+# In[37]:
 
 print "a"
 
@@ -663,17 +698,41 @@ print "a"
 
 # In[ ]:
 
-get_ipython().magic(u'matplotlib inline')
+save_network(gparams,dparams, cparams,"base")
 
 
 # In[ ]:
 
-plt.plot(np.asarray(dzstats)[:,1], label="Disc Train", linestyle='--')
 
-plt.plot(np.asarray(dzstats)[:,0], label="Disc Test", linestyle='--')
 
-# plt.plot(np.asarray(zstats)[:,1], label="Train", linestyle='-')
-# plt.plot(np.asarray(zstats)[:,0], label="Test", linestyle='-')
+
+# In[ ]:
+
+
+
+
+# In[ ]:
+
+
+
+
+# In[ ]:
+
+
+
+
+# In[14]:
+
+get_ipython().magic(u'matplotlib inline')
+
+
+# In[32]:
+
+plt.plot(np.asarray(dzstats)[:,1], label="Gen Train", linestyle='-', c="blue")
+plt.plot(np.asarray(dzstats)[:,0], label="Gen Test", linestyle='--', c="blue")
+
+plt.plot(np.asarray(zstats)[:,1], label="Disc Train", linestyle='-', c="red")
+plt.plot(np.asarray(zstats)[:,0], label="Disc Test", linestyle='--', c="red")
 
 plt.legend()
 
@@ -683,14 +742,99 @@ plt.legend()
 
 
 
+# In[38]:
+
+import h5py
+from fuel.converters.base import fill_hdf5_file
+from fuel.datasets import SVHN
+from fuel.streams import DataStream
+from fuel.schemes import SequentialScheme
+
+
+# In[ ]:
+
+#y.shape
+
+
+# In[92]:
+
+normalize(train_stream.get_epoch_iterator().next()[0]).flatten(ndim=2).shape
+
+
+# In[ ]:
+
+#train_stream.get_epoch_iterator().next()[1].shape
+
+
 # In[ ]:
 
 
 
 
-# In[ ]:
+# In[101]:
+
+preprocess(*train_stream.get_epoch_iterator().next())
 
 
+# In[107]:
+
+
+input_x = T.matrix('x')
+input_y = T.imatrix('targets')
+
+
+z_inf,z_feat = x_to_z(gparams, inverse_sigmoid(input_x))
+
+d_val, d_feat = discriminator(dparams, input_x, z_inf)
+
+#get_dz = theano.function([input_x], outputs = [d_feat[0],d_feat[1]])
+
+#preprocess = theano.function([x, y], [output.flatten(ndim=2), y])
+
+
+prepreprocess = theano.function([input_x, input_y], outputs = [T.concatenate([d_feat[0],d_feat[1]], axis=1).flatten(),input_y])
+
+
+def preprocess(x,y):
+    return prepreprocess(normalize(x).reshape((-1,32*32*3)),y)
+
+
+
+
+#h5file = h5py.File("ALI-semisuper-disc", mode='w')
+
+print "train data"
+train_set = SVHN(2, which_sets=('train',), sources=('features', 'targets'))
+train_stream = DataStream.default_stream(
+    train_set,
+    iteration_scheme=SequentialScheme(train_set.num_examples, 100))
+train_features, train_targets = map(
+    np.vstack,
+    list(zip(*[preprocess(*batch) for batch in
+               train_stream.get_epoch_iterator()])))
+
+print "test data"
+test_set = SVHN(2, which_sets=('test',), sources=('features', 'targets'))
+test_stream = DataStream.default_stream(
+    test_set,
+    iteration_scheme=SequentialScheme(test_set.num_examples, 100))
+test_features, test_targets = map(
+    numpy.vstack,
+    list(zip(*[preprocess(*batch) for batch in
+               test_stream.get_epoch_iterator()])))
+
+data = (('train', 'features', train_features),
+        ('test', 'features', test_features),
+        ('train', 'targets', train_targets),
+        ('test', 'targets', test_targets))
+fill_hdf5_file(h5file, data)
+for i, label in enumerate(('batch', 'feature')):
+    h5file['features'].dims[i].label = label
+for i, label in enumerate(('batch', 'index')):
+    h5file['targets'].dims[i].label = label
+
+h5file.flush()
+h5file.close()
 
 
 # In[ ]:
