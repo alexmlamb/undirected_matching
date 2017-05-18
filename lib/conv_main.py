@@ -8,6 +8,17 @@
 
 '''
 
+<<<<<<< HEAD
+=======
+import theano
+import theano.tensor as T
+from nn_layers import fflayer, param_init_fflayer, param_init_convlayer, convlayer
+from utils import init_tparams, join2, srng, dropout, inverse_sigmoid, join3, merge_images
+from loss import accuracy, crossent, lsgan_loss, wgan_loss, improvement_loss
+import lasagne
+import numpy as np
+import numpy.random as rng
+>>>>>>> 21728d6c35a0c1e2c3ab22566046a38c999cc169
 import gzip
 import cPickle as pickle
 import random
@@ -29,7 +40,174 @@ import theano
 import theano.tensor as T
 from viz import plot_images
 
+<<<<<<< HEAD
 logger = logging.getLogger('UDGAN')
+=======
+import os
+slurm_name = os.environ["SLURM_JOB_ID"]
+
+class ConsiderConstant(theano.compile.ViewOp):
+    def grad(self, args, g_outs):
+        return [T.zeros_like(g_out) for g_out in g_outs]
+
+consider_constant = ConsiderConstant()
+
+dataset = "mnist"
+#dataset = "anime"
+#dataset = "svhn"
+
+if dataset == "mnist":
+    mn = gzip.open("/u/lambalex/data/mnist/mnist.pkl.gz")
+
+    train, valid, test = pickle.load(mn)
+
+    trainx,trainy = train
+    
+    
+    #newtx = trainx[(trainy<2) | (trainy>8)]
+    #newty = trainy[(trainy<2) | (trainy>8)]
+    #trainx = newtx
+    #trainy = newty
+    
+    validx,validy = valid
+    testx, testy = test
+
+    num_examples = trainx.shape[0]
+
+    m = 784
+elif dataset == "anime":
+    from load_file import FileData, normalize, denormalize
+
+    loc = "/u/lambalex/DeepLearning/animefaces/datafaces/danbooru-faces/"
+
+    animeData = FileData(loc, 32, 64)
+
+    m = 32*32*3
+
+elif dataset == "svhn":
+
+    from load_svhn import SvhnData
+    from load_file import normalize, denormalize
+
+    svhnData = SvhnData(mb_size=64,segment="train")
+
+    num_examples = 50000
+
+nl = 128
+print "num latent", nl
+#128 works for nl
+nfg = 512
+nfd = 512
+
+print "dataset", dataset
+
+#3
+num_steps = 1
+print "num steps", num_steps
+
+train_classifier_separate = True
+print "train classifier separate", train_classifier_separate
+
+#skip_conn = True
+#print "skip conn", skip_conn
+
+latent_sparse = False
+print "latent sparse", latent_sparse
+
+persist_p_chain = False
+print "persistent p chain", persist_p_chain
+
+blending_rate = 0.5
+print 'blending rate (odds of keeping old z in P chain)', blending_rate
+
+improvement_loss_weight = 0.0
+print "improvement loss weight", improvement_loss_weight
+
+def init_gparams(p):
+
+    p = param_init_fflayer(options={},params=p,prefix='z_x_1',nin=nl*2,nout=512*4*4,ortho=False,batch_norm=True)
+
+    p = param_init_convlayer(options={},params=p,prefix='z_x_2',nin=512,nout=256,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='z_x_3',nin=256*1,nout=128,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='z_x_4',nin=128*1,nout=3,kernel_len=5,batch_norm=False)
+
+    p = param_init_convlayer(options={},params=p,prefix='x_z_1',nin=3,nout=128,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_2',nin=128,nout=256,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_3',nin=256,nout=512,kernel_len=5,batch_norm=True)
+
+    p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=512*4*4,nout=nl,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=512*4*4,nout=nl,ortho=False,batch_norm=False)
+
+    return init_tparams(p)
+
+def init_dparams(p):
+
+    p = param_init_convlayer(options={},params=p,prefix='DC_1',nin=3,nout=128,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='DC_2',nin=128,nout=256,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='DC_3',nin=256,nout=512,kernel_len=5,batch_norm=False)
+
+    p = param_init_fflayer(options={},params=p,prefix='D_1',nin=nl+512*4*4,nout=nfd,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='D_2',nin=nfd,nout=nfd,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='D_3',nin=nfd,nout=nfd,ortho=False,batch_norm=False)
+
+    p = param_init_fflayer(options={},params=p,prefix='D_o_1',nin=nfd,nout=1,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='D_o_2',nin=nfd,nout=1,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='D_o_3',nin=nfd,nout=1,ortho=False,batch_norm=False)
+
+    p = param_init_convlayer(options={},params=p,prefix='D_o_4',nin=128,nout=1,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='D_o_5',nin=256,nout=1,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='D_o_6',nin=512,nout=1,kernel_len=5,batch_norm=False)
+
+    return init_tparams(p)
+
+
+def z_to_x(p,z):
+
+    print "extra noise input"
+    z_inp = join2(z, 1.0*srng.normal(size=z.shape))
+
+    d0 = fflayer(tparams=p,state_below=z_inp,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
+
+    d0 = d0.reshape((64,512,4,4))
+
+    d1 = convlayer(tparams=p,state_below=d0,options={},prefix='z_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
+
+    d2 = convlayer(tparams=p,state_below=d1,options={},prefix='z_x_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
+
+    d3 = convlayer(tparams=p,state_below=d2,options={},prefix='z_x_4',activ='lambda x: x',stride=-2)
+
+    x_new = d3.flatten(2)
+
+    return x_new
+
+def x_to_z(p,x):
+
+    e1 = convlayer(tparams=p,state_below=x.reshape((64,3,32,32)),options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+
+    e2 = convlayer(tparams=p,state_below=e1,options={},prefix='x_z_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+
+    e3 = convlayer(tparams=p,state_below=e2,options={},prefix='x_z_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+
+    eo = e3
+    eo = eo.flatten(2)
+
+    sigma = fflayer(tparams=p,state_below=eo,options={},prefix='x_z_mu',activ='lambda x: x')
+    mu = fflayer(tparams=p,state_below=eo,options={},prefix='x_z_sigma',activ='lambda x: x')
+
+    eps = srng.normal(size=sigma.shape)
+
+    z_new = eps*T.nnet.sigmoid(sigma) + mu
+    print "turned on injected noise in x->z connection"
+
+    z_new = (z_new - T.mean(z_new, axis=0, keepdims=True)) / (0.001 + T.std(z_new, axis=0, keepdims=True))
+
+    return z_new
+
+
+def discriminator(p,x,z):
+
+    dc_1 = convlayer(tparams=p,state_below=x.reshape((64,3,32,32)),options={},prefix='DC_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+>>>>>>> 21728d6c35a0c1e2c3ab22566046a38c999cc169
 
 from data import load_stream, Pad
 from exptools import make_argument_parser, setup_out_dir
@@ -231,11 +409,57 @@ def p_chain(p, z, num_iterations, pd_steps=None, x=None, **model_args):
             
             zlst.append(z)
 
+<<<<<<< HEAD
     #for j in range(len(xlst)):
     #    xlst[j] = T.nnet.sigmoid(xlst[j])
     
     assert len(xlst) == len(zlst)
     return xlst, plst, zlst
+=======
+    if num_iterations == 1:
+        
+        new_x = z_to_x(p, zlst[-1])
+        xlst.append(new_x)
+        #new_z = x_to_z(p, xlst[-1])
+        #zlst.append(new_z)
+
+    elif num_iterations == 3:  
+
+        new_x = z_to_x(p, zlst[-1])
+        xlst.append(new_x)
+        new_z = x_to_z(p, consider_constant(xlst[-1]))
+        zlst.append(new_z)
+
+        new_x = z_to_x(p, zlst[-1])
+        xlst.append(new_x)
+        new_z = x_to_z(p, consider_constant(xlst[-1]))
+        zlst.append(new_z)
+
+        new_x = z_to_x(p, zlst[-1])
+        xlst.append(new_x)
+
+    else:
+
+        for inds in range(0,num_iterations):
+            new_x = z_to_x(p, zlst[-1])
+            xlst.append(new_x)
+            new_z = x_to_z(p, xlst[-1])
+            zlst.append(new_z)
+
+
+    for j in range(len(xlst)):
+        xlst[j] = T.nnet.sigmoid(xlst[j])
+
+    return xlst, zlst
+
+def onestep_z_to_x(p,z):
+    x = T.nnet.sigmoid(z_to_x(p, z))
+    return x
+
+def onestep_x_to_z(p,x):
+    new_z = x_to_z(p, inverse_sigmoid(x))
+    return new_z
+>>>>>>> 21728d6c35a0c1e2c3ab22566046a38c999cc169
 
 
 def q_chain(p, x, y, num_iterations, test=False, **model_args):
@@ -257,6 +481,7 @@ def q_chain(p, x, y, num_iterations, test=False, **model_args):
     return xlst, ylst, zlst
 
 
+<<<<<<< HEAD
 def inpaint_chain(p, x, z, num_iterations, noise_damping=None, **model_args):
     z_to_x = MODULE.z_to_x
     x_to_z = MODULE.x_to_z
@@ -285,6 +510,74 @@ def inpaint_chain(p, x, z, num_iterations, noise_damping=None, **model_args):
             z = x_to_z(p, x, noise_scale=sigma, **model_args)
         if noise_damping is not None:
             sigma *= noise_damping
+=======
+print p_lst_x
+print p_lst_z
+print q_lst_x
+print q_lst_z
+
+#D_p_lst_3,_ = discriminator(dparams, p_lst_x[2], p_lst_z[2])
+
+#D_p_lst_2,_ = discriminator(dparams, p_lst_x[1], p_lst_z[1])
+
+D_p_lst_1,_ = discriminator(dparams, p_lst_x[0], p_lst_z[0])
+
+D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
+
+dloss, gloss = lsgan_loss(D_q_lst, D_p_lst_1)
+
+print "single disc"
+print "not using improvement objective"
+#improvement_objective = improvement_loss_weight * improvement_loss(D_p_lst_1, D_p_lst_2)
+#gloss += improvement_objective
+
+dupdates = lasagne.updates.rmsprop(dloss, dparams.values(),0.0001)
+gloss_grads = T.grad(gloss, gparams.values(), disconnected_inputs='ignore')
+gupdates = lasagne.updates.rmsprop(gloss_grads, gparams.values(),0.0001)
+
+gcupdates = lasagne.updates.rmsprop(gloss, gparams.values(),0.0001)
+
+dgupdates = dupdates.copy()
+dgupdates.update(gupdates)
+
+dgcupdates = dupdates.copy()
+dgcupdates.update(gcupdates)
+
+train_disc_gen_classifier = theano.function(inputs = [x_in, z_in], outputs=[dloss,p_lst_x[-1],p_lst_z[-1]], updates=dgcupdates,on_unused_input='ignore')
+
+get_zinf = theano.function([x_in], outputs=z_inf)
+#get_dfeat = theano.function([x_in], outputs=D_feat_q)
+
+#get_pchain = theano.function([z_in], outputs = p_lst_x_long)
+
+x_in = T.matrix()
+
+func_z_to_x = theano.function([z_in], outputs = onestep_z_to_x(gparams, z_in))
+func_x_to_z = theano.function([x_in], outputs = onestep_x_to_z(gparams, x_in))
+
+if __name__ == '__main__':
+
+    z_out_p = rng.normal(size=(64,nl)).astype('float32')
+
+    for iteration in range(0,500000):
+
+        if persist_p_chain:
+            z_in_new = rng.normal(size=(64,nl)).astype('float32')
+            blending = rng.uniform(0.0,1.0,size=(64,))
+            z_in_new[blending>=blending_rate] = z_out_p[blending>=blending_rate]
+            z_in = z_in_new
+        else:
+            z_in = rng.normal(size=(64,nl)).astype('float32')
+
+        if latent_sparse:
+            z_in[:,128:] *= 0.0
+
+        r = random.randint(0,num_examples-64)
+        
+        if dataset == "mnist":
+            x_in = trainx[r:r+64]
+            y_in = trainy[r:r+64]
+>>>>>>> 21728d6c35a0c1e2c3ab22566046a38c999cc169
 
     #for j in range(len(xlst)):
     #    xlst[j] = T.nnet.sigmoid(xlst[j])
@@ -326,6 +619,7 @@ def inpaint_images(p, y, z, num_iterations, **model_args):
     return xlst
 
 
+<<<<<<< HEAD
 def onestep_z_to_x(p, z, **model_args):
     out = MODULE.z_to_x(p, z, **model_args)
     if MODULE._semi_supervised:
@@ -334,6 +628,10 @@ def onestep_z_to_x(p, z, **model_args):
         x = out
     #x = T.nnet.sigmoid(x)
     return x
+=======
+        dloss,gen_x,z_out_p = train_disc_gen_classifier(x_in,z_in)
+        
+>>>>>>> 21728d6c35a0c1e2c3ab22566046a38c999cc169
 
 
 def onestep_x_to_z(p, x, y, **model_args):
@@ -537,6 +835,7 @@ def train(train_fn, gen_fn, chain_fn, chain_fn_x, inpaint_fn, inpaint_fn_d,
             outs = train_fn(x_in, z_in)
             update_dict_of_lists(e_results, **outs)
             
+<<<<<<< HEAD
             u += 1
             pbar.update(u)
             
@@ -724,6 +1023,23 @@ def main(source, data_args, model_args, optimizer_args, train_args,
         except SystemExit:
             os._exit(0)
             
+=======
+            #p_chain = get_pchain(z_in)
+            new_z = rng.normal(size=(64,nl)).astype('float32')
+            for j in range(0,20):
+                new_x = func_z_to_x(new_z)
+                new_z = func_x_to_z(new_x)
+                print "printing element of p_chain", j
+                plot_images(new_x, "plots/" + slurm_name + "_pchain_" + str(j) + ".png")
+        
+            new_z = rng.normal(size=(64,nl)).astype('float32')
+            for j in range(0,20):
+                new_x = func_z_to_x(new_z)
+                new_x = merge_images(new_x, x_in)
+                new_z = func_x_to_z(new_x)
+                plot_images(new_x, "plots/" + slurm_name + "_inpainting_" + str(j) + ".png")
+
+>>>>>>> 21728d6c35a0c1e2c3ab22566046a38c999cc169
 
 def config(data_args, model_args, optimizer_args, train_args, visualizer_args,
            config_file=None):

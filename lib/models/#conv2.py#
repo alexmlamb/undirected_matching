@@ -21,7 +21,7 @@ logger = logging.getLogger('UDGAN.conv1')
 
 _semi_supervised = False
 _defaults = dict(
-    n_levels=3, dim_z=128, dim_h=128, dim_hd=512, multi_discriminator=True,
+    n_levels=4, dim_z=128, dim_h=256, dim_hd=512, multi_discriminator=True,
     normalize_z=True
 )
 
@@ -256,9 +256,7 @@ def x_to_z(p, x, n_levels=3, dim_z=128, dim_h=128, dim_c=3, dim_x=32, dim_y=32,
         activ='lambda x: tensor.nnet.relu(x, alpha=0.02)')
     z = fflayer(
         tparams=p, state_below=h, options={}, prefix='x_z_final2',
-        #activ='lambda x: x'
-        activ='lambda x: T.tanh(x)'
-        )
+        activ='lambda x: x')
     out['z'] = z
 
     if return_tensors:

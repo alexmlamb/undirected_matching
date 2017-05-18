@@ -198,7 +198,8 @@ def z_to_x(p, z, n_levels=3, dim_h=128, dim_x=32, dim_y=32,
         name = 'z_x_conv_{}'.format(level)
         logger.debug('Forming layer with name {}'.format(name))
         if level == n_levels - 1:
-            activ = 'lambda x: x'
+            #activ = 'lambda x: x'
+            activ = 'lambda x: T.tanh(x)'
         else:
             activ = 'lambda x: tensor.nnet.relu(x, alpha=0.02)'
 

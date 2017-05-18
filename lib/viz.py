@@ -124,6 +124,8 @@ def plot_images(X, fname, title=""):
         X = X[:25]
     elif X.shape == (64,32*32*3):
         X = X.reshape((64,3,32,32))
+    elif X.shape == (64,64*64*3):
+        X = X.reshape((64,3,64,64))
     else:
         raise Exception("INVALID SHAPE OPTION")
     '''

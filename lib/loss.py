@@ -6,6 +6,12 @@ sys.path.append("/u/lambalex/DeepLearning/dreamprop/lib")
 import theano
 import theano.tensor as T
 
+class ConsiderConstant(theano.compile.ViewOp):
+    def grad(self, args, g_outs):
+        return [T.zeros_like(g_out) for g_out in g_outs]
+
+consider_constant = ConsiderConstant()
+
 def cast(inp):
     return T.cast(inp, 'float32')
 
@@ -31,8 +37,12 @@ def clip_updates(updates, params):
         new_updates.append((p,u))
     return new_updates
 
+<<<<<<< HEAD
 
 def lsgan_loss(D_q_lst, D_p_lst):
+=======
+def lsgan_loss(D_q_lst, D_p_lst, bs=True):
+>>>>>>> 21728d6c35a0c1e2c3ab22566046a38c999cc169
     dloss = 0.0
     gloss = 0.0
 
@@ -50,6 +60,21 @@ def lsgan_loss(D_q_lst, D_p_lst):
 
     return dloss / max_len, gloss / max_len
 
+<<<<<<< HEAD
+=======
+def improvement_loss(D1lst, D2lst): 
+    new_loss = 0.0
+
+    for i in range(len(D1lst)):
+        D1 = D1lst[i]
+        D2 = D2lst[i]
+        print "mod loss square 2"
+        new_loss += T.mean(T.switch(T.lt(D2,D1)*T.lt(D2,0.9),(D2 - (consider_constant(D1)+0.1))**2,0.0))
+        new_loss += T.mean(T.switch(T.gt(D2,1.0), 1.0*D2, 0.0))
+
+    return new_loss
+
+>>>>>>> 21728d6c35a0c1e2c3ab22566046a38c999cc169
 
 def wgan_loss(D_q_lst, D_p_lst):
     dloss = 0.0

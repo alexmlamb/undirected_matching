@@ -82,7 +82,9 @@ def load_stream(batch_size=None, source=None, data_min=0, data_max=1):
             shape = list(shape)
             shape[0] = examples
             shapes[i] = tuple(shape)
-    
+
+        if sets == 'test':
+            batch_size = 256
         scheme = ShuffledScheme(examples=examples, batch_size=batch_size)
         stream = Rescale(DataStream(dataset, iteration_scheme=scheme),
                          min=data_min, max=data_max)

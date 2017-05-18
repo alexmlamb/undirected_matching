@@ -111,7 +111,7 @@ def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor
         batch_norm = False
 
     if batch_norm:
-        conv_out = (conv_out - T.mean(conv_out, axis=(0,2,3), keepdims=True)) / (0.01 + T.std(conv_out, axis=(0,2,3), keepdims=True))
+        conv_out = (conv_out - T.mean(conv_out, axis=(0,2,3), keepdims=True)) / (1e-6 + T.std(conv_out, axis=(0,2,3), keepdims=True))
 
         conv_out = conv_out*tparams[prefix+'_newsigma'].dimshuffle('x',0,'x','x') + tparams[prefix+'_newmu'].dimshuffle('x',0,'x','x')
 
@@ -155,8 +155,8 @@ def fflayer(tparams,
 
 
     if batch_norm:
-        preactivation = (preactivation - preactivation.mean(axis=0)) / (0.0001 + preactivation.std(axis=0))
-        preactivation = preactivation + 0.0*(tparams[prefix+'_newmu'] + preactivation*tparams[prefix+'_newsigma'])
+        preactivation = (preactivation - preactivation.mean(axis=0)) / (1e-6 + preactivation.std(axis=0))
+        preactivation = (tparams[prefix+'_newmu'] + preactivation*tparams[prefix+'_newsigma'])
     #if layer_norm:
     #    preactivation = (preactivation - preactivation.mean(axis=1,keepdims=True)) / (0.0000001 + preactivation.std(axis=1,keepdims=True))
     #if mean_bn:
