@@ -1,18 +1,27 @@
+'''Utilities
+
+'''
+
+from collections import OrderedDict
+import inspect
+import os
+from os import path
+import pickle
+import time
+import yaml
+import warnings
+
+import numpy as np
+import numpy.random as rng
 import theano
 from theano import tensor
 import theano.tensor as T
-import warnings
 import six
-import pickle
-
-import numpy
-import inspect
-from collections import OrderedDict
-import time
-import os
 from sklearn.cross_validation import KFold
-import numpy as np
-import numpy.random as rng
+
+
+floatX = theano.config.floatX
+
 
 # make prefix-appended name
 def _p(pp, name):
@@ -39,11 +48,11 @@ def create_log_dir(suffix, model_id):
     return model_dir
 
 
-def merge_images(img1,img2,cutoff=16):
+def merge_images(img1,img2):
     i1 = img1.reshape((64,3,32,32))
     i2 = img2.reshape((64,3,32,32))
 
-    new_img = np.concatenate([i1[:,:,:,0:cutoff], i2[:,:,:,cutoff:32]], axis = 3)
+    new_img = np.concatenate([i1[:,:,:,0:16], i2[:,:,:,16:32]], axis = 3)
 
     return new_img.reshape((64,32*32*3))
 
@@ -93,7 +102,7 @@ def init_tparams(params):
 
 # load parameters
 def load_params(path, params):
-    pp = numpy.load(path)
+    pp = np.load(path)
     for kk, vv in six.iteritems(params):
         if kk not in pp:
             warnings.warn('%s is not in the archive' % kk)
@@ -105,8 +114,8 @@ def load_params(path, params):
 
 # some utilities
 def ortho_weight(ndim):
-    W = numpy.random.randn(ndim, ndim)
-    u, s, v = numpy.linalg.svd(W)
+    W = np.random.randn(ndim, ndim)
+    u, s, v = np.linalg.svd(W)
     return u.astype('float32')
 
 
@@ -116,16 +125,36 @@ def norm_weight(nin, nout=None, scale=0.01, ortho=True):
     if nout == nin and ortho:
         W = ortho_weight(nin)
     else:
-        W = scale * numpy.random.randn(nin, nout)
+        W = scale * np.random.randn(nin, nout)
     return W.astype('float32')
 
 
 def uniform_weight(nin, nout, scale=None):
     if scale is None:
-        scale = numpy.sqrt(6. / (nin + nout))
+        scale = np.sqrt(6. / (nin + nout))
 
-    W = numpy.random.uniform(low=-scale, high=scale, size=(nin, nout))
+    W = np.random.uniform(low=-scale, high=scale, size=(nin, nout))
     return W.astype('float32')
+
+
+def log_sum_exp(x, axis=None):
+    '''Numerically stable log( sum( exp(A) ) ).
+
+    '''
+    x_max = T.max(x, axis=axis, keepdims=True)
+    y = T.log(T.sum(T.exp(x - x_max), axis=axis, keepdims=True)) + x_max
+    y = T.sum(y, axis=axis)
+    return y
+
+
+def log_sum_exp2(x, axis=None):
+    '''Numerically stable log( sum( exp(A) ) ).
+
+    '''
+    x_max = T.max(x, axis=axis, keepdims=True)
+    y = T.log(T.sum(T.exp(x - x_max), axis=axis, keepdims=True)) + x_max
+    y = T.sum(y, axis=axis, keepdims=True)
+    return y
 
 
 def concatenate(tensor_list, axis=0):
@@ -174,11 +203,80 @@ def concatenate(tensor_list, axis=0):
 
 
 def sample_multinomial(y):
+    if y.ndim == 3:
+        shape = y.shape
+        y = y.reshape((-1, y.shape[0] * y.shape[1]))
+    else:
+        shape = None
     p = T.nnet.softmax(y)
-    samples = trng.multinomial(pvals=p).astype(floatX)
+    samples = srng.multinomial(pvals=p).astype(floatX)
     samples = theano.gradient.disconnected_grad(samples)
+    if shape is not None:
+        samples = samples.reshape(shape)
     return samples
 
+
+def update_dict_of_lists(d_to_update, **d):
+    '''Updates a dict of list with kwargs.
+
+    Args:
+        d_to_update (dict): dictionary of lists.
+        **d: keyword arguments to append.
+
+    '''
+    for k, v in d.iteritems():
+        if k in d_to_update.keys():
+            d_to_update[k].append(v)
+        else:
+            d_to_update[k] = [v]
+
+try:
+    _, _columns = os.popen('stty size', 'r').read().split()
+    _columns = int(_columns)
+except ValueError:
+    _columns = 1
+
+
+def print_section(s):
+    '''For printing sections to scripts nicely.
+
+    Args:
+        s (str): string of section
+
+    '''
+    h = s + ('-' * (_columns - len(s)))
+    print h
+    
+
+def save_parameters(arch, out_path=None, suffix=''):
+    gparams = arch.GPARAMS
+    dparams = arch.DPARAMS
+    if out_path is None:
+        return
+    if gparams is not None:
+        gparams_np = dict((k, v.eval()) for k, v in gparams.items())
+        np.savez(path.join(out_path, 'g_params{}.npz'.format(suffix)),
+                 **gparams_np)
+
+    if dparams is not None:
+        dparams_np = dict((k, v.eval()) for k, v in dparams.items())        
+        np.savez(path.join(out_path, 'd_params{}.npz'.format(suffix)),
+                 **dparams_np)
+        
+        
+def config(data_args, model_args, optimizer_args, train_args, visualizer_args,
+           config_file=None):
+        
+    if config_file is not None:
+        with open(config_file, 'r') as f:
+            d = yaml.load(f)
+        
+        model_args.update(**d.get('model_args', {}))
+        optimizer_args.update(**d.get('optimizer_args', {}))
+        train_args.update(**d.get('train_args', {}))
+        visualizer_args.update(**d.get('visualizer_args', {}))
+        data_args.update(**d.get('data_args', {}))
+        
 
 class Parameters():
     def __init__(self):
@@ -219,7 +317,7 @@ class Parameters():
 
     def load(self, filename):
         tparams = self.__dict__['tparams']
-        loaded = pickle.load(open(filename, 'rb'))
+        loaded = pickle.load(open(filename, 'rb'), encoding='latin1')
         for k in loaded:
             tparams[k] = loaded[k]
 
@@ -248,20 +346,11 @@ class Parameters():
 
 if __name__ == "__main__":
 
-    import numpy.random as rng
-    import numpy as np
-    #x1 = rng.normal(size = (64,3,32,32))
-    #x2 = np.zeros(shape = (64,3,32,32))
+    x1 = rng.normal(size = (64,3,32,32))
+    x2 = np.zeros(shape = (64,3,32,32))
 
-    #x3 = merge_images(x1,x2)
+    x3 = merge_images(x1,x2)
 
-    #print x3.shape
-    p = Parameters()
-    #p.tparams = {'a' : theano.shared(np.zeros(shape=(13,)))}
+    print x3.shape
 
-    p.load("derp")
     
-    print p.tparams['tparams']['a'].get_value()
-
-
-

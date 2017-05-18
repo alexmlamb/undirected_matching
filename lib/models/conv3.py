@@ -17,7 +17,7 @@ from nn_layers import (
 from utils import init_tparams, join2, srng
 
 
-logger = logging.getLogger('UDGAN.conv1')
+logger = logging.getLogger('UDGAN.conv3')
 
 _semi_supervised = False
 _defaults = dict(
@@ -56,22 +56,26 @@ def init_gparams(n_levels=None, dim_z=None, dim_h=None, dim_c=None, dim_x=None,
                         'convolutional layers. ({})'.format(
                             dim_y / float(scale)))
 
+    dim_in = dim_z * 2
+    dim_out = dim_h * scale // 2
     p = param_init_fflayer(
-        params=p, prefix='z_x_ff', nin=dim_z * 2,
-        nout=dim_h * dim_x * dim_y // scale // 2, ortho=False,
+        params=p, prefix='z_x_ff', nin=dim_in,
+        nout=dim_out * dim_x // scale * dim_y // scale, ortho=False,
         batch_norm=True)
 
-    dim_in = dim_h * scale // 2
+    dim_in = dim_out
     for level in xrange(n_levels):
+        name = 'z_x_conv_{}'.format(level)
         if level == n_levels - 1:
             dim_out = dim_c
+            batch_norm = False
         else:
             dim_out = dim_in // 2
+            batch_norm = True
         
         p = param_init_convlayer(
-            params=p, prefix='z_x_conv_{}'.format(level),
-            nin=dim_in, nout=dim_out,
-            kernel_len=5, batch_norm=(level != n_levels - 1))
+            params=p, prefix=name, nin=dim_in, nout=dim_out,
+            kernel_len=5, batch_norm=batch_norm)
         dim_in = dim_out
 
     for level in xrange(n_levels):
@@ -114,11 +118,11 @@ def z_to_x(z, n_levels=None, dim_h=None, dim_x=None, dim_y=None,
     
     logger.debug("Added extra noise input")
     z = T.concatenate([z, srng.normal(size=z.shape)], axis=1)
-    d['z'] = z
+    d['z_i'] = z
     x = fflayer(
         tparams=p, state_below=z, prefix='z_x_ff',
         activ='lambda x: tensor.nnet.relu(x, alpha=0.02)')
-    d['x0'] = x
+    d['x0_z'] = x
 
     x = x.reshape((-1, dim_h * scale // 2, dim_x // scale, dim_y // scale))
     d['x0_rs'] = x
@@ -163,19 +167,17 @@ def x_to_z(x, n_levels=None, dim_z=None, dim_h=None, dim_c=None, dim_x=None,
 
     log_sigma = fflayer(
         tparams=p, state_below=h, prefix='x_z_logsigma',
-        activ='lambda x: x')
+        active='T.tanh(x)')#activ='lambda x: x')
     out['logsigma'] = log_sigma
 
     mu = fflayer(
         tparams=p, state_below=h, prefix='x_z_mu',
-        activ='lambda x: x')
+        active='T.tanh(x)')#activ='lambda x: x')
     out['mu'] = mu
-    
-    #log_sigma = T.minimum(log_sigma, 5.)
 
     eps = srng.normal(size=log_sigma.shape)
-    #z = eps * T.exp(log_sigma) + mu
-    z = eps * T.nnet.sigmoid(log_sigma) + mu # Old way
+    z = eps * T.exp(log_sigma) + mu
+    #z = eps * T.nnet.sigmoid(log_sigma) + mu # Old way
     out['z'] = z
 
     if normalize_z:
@@ -206,41 +208,39 @@ def init_dparams(n_levels=None, dim_z=None, dim_h=None, dim_hd=None, dim_c=None,
     scale = 2 ** n_levels
 
     for level in xrange(n_levels):
-        name = 'd_conv_{}'.format(level)
         
         if level == 0:
             dim_out = dim_h
         else:
             dim_out = dim_in * 2
+            
+        batch_norm = (level != 0)
 
         p = param_init_convlayer(
-            params=p, prefix=name, nin=dim_in, nout=dim_out,
-            kernel_len=5, batch_norm=False)
-
-        '''
-        if multi_discriminator:
-            name_out = 'd_conv_out_{}'.format(level)
-            p = param_init_convlayer(
-                params=p, prefix=name_out, nin=dim_out, nout=1,
-                kernel_len=5, batch_norm=False)
-        '''
+            params=p, prefix='d_conv_{}'.format(level),
+            nin=dim_in, nout=dim_out,
+            kernel_len=5, batch_norm=batch_norm)
 
         dim_in = dim_out
-
-    n_levels = 2
-    for level in xrange(n_levels):
-        name = 'd_ff_{}'.format(level)
-
-        if level == 0:
-            dim_in = dim_z + dim_h * scale * dim_x // scale * dim_y // scale // 2
         
-        dim_out = dim_hd
+    n_levels = 2
+    dim_out = dim_hd
+    for level in xrange(n_levels):
+        
+        if level == 0:
+            dim_in = dim_h * scale * dim_x // scale * dim_y // scale // 2
         
         p = param_init_fflayer(
-            params=p, prefix=name, nin=dim_in, nout=dim_out,
-            ortho=False, batch_norm=False)
+            params=p, prefix='d_ff_{}'.format(level), nin=dim_in, nout=dim_out,
+            ortho=False, batch_norm=True)
 
-        if multi_discriminator or level == n_levels - 1:
+        if level != n_levels - 1:
+            p = param_init_fflayer(
+                params=p, prefix='d_ff_z_{}'.format(level),
+                nin=dim_z, nout=dim_out,
+                ortho=False, batch_norm=True)
+            
+        if level == n_levels - 1 or multi_discriminator:
             name_out = 'd_ff_out_{}'.format(level)
             p = param_init_fflayer(
                 params=p, prefix=name_out, nin=dim_out, nout=1,
@@ -260,10 +260,6 @@ def discriminator(x, z, n_levels=None, dim_z=None, dim_h=None, dim_hd=None,
     
     '''
     p = DPARAMS
-    if multi_discriminator:
-        logger.info('Using mutliple scores for the discriminator.')
-    else:
-        logger.info('Using single score.')
     outs = OrderedDict()
     
     h = x.reshape((-1, dim_c, dim_x, dim_y))
@@ -272,42 +268,34 @@ def discriminator(x, z, n_levels=None, dim_z=None, dim_h=None, dim_hd=None,
 
     ds = []
     for level in xrange(n_levels):
-        name = 'd_conv_{}'.format(level)
         h = convlayer(
-            tparams=p, state_below=h, prefix=name, activ=activ,
-            stride=2)
+            tparams=p, state_below=h, prefix='d_conv_{}'.format(level),
+            activ=activ, stride=2)
         outs['h_conv_{}'.format(level)] = h
         
-        '''
-        if multi_discriminator:
-            name_out = 'd_conv_out_{}'.format(level)
-            d = convlayer(
-                tparams=p, state_below=h, prefix=name_out,
-                activ='lambda x: x', stride=2)
-            ds.append(d)
-            outs['d_conv_{}'.format(level)] = d
-        '''
-        
-    outs['hf'] = h.flatten(2)
-    outs['z'] = z
-    h = T.concatenate([z, h.flatten(2)], axis=1)
-    outs['h1'] = h
+    h = h.flatten(2)
+    outs['hf'] = h
 
     n_levels = 2
     for level in xrange(n_levels):
-        name = 'd_ff_{}'.format(level)
         h = fflayer(
-            tparams=p, state_below=h, prefix=name, activ=activ,
-            mean_ln=False)
+            tparams=p, state_below=h, prefix='d_ff_{}'.format(level),
+            activ=activ, mean_ln=False)
         outs['h_ff_{}'.format(level)] = h
         
-        if multi_discriminator or level == n_levels - 1:
-            name_out = 'd_ff_out_{}'.format(level)
+        if level != n_levels - 1:
+            z_h = fflayer(
+                tparams=p, state_below=z, prefix='d_ff_z_{}'.format(level),
+                activ=activ, mean_ln=False)
+            h = z_h + h
+        
+        if level == n_levels - 1 or multi_discriminator:
             d = fflayer(
-                tparams=p, state_below=h, prefix=name_out,
+                tparams=p, state_below=h, prefix='d_ff_out_{}'.format(level),
                 activ='lambda x: x')
             ds.append(d)
             outs['d_ff_{}'.format(level)] = d
+            
     if return_tensors:
         return outs
     else:

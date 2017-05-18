@@ -25,6 +25,7 @@ import random
 import os
 from os import path
 import sys
+#sys.setrecursionlimit(250)
 import time
 
 import imageio
@@ -214,7 +215,7 @@ from exptools import make_argument_parser, setup_out_dir
 from loggers import set_stream_logger
 from loss import (accuracy, bgan_loss, bgan_loss_2, crossent, lsgan_loss,
                   wgan_loss)
-from models import conv1, conv2
+from models import conv1, conv2, conv_ss_1, conv_ss_2
 from utils import (
     init_tparams, join2, srng, dropout, inverse_sigmoid, join3, merge_images,
     sample_multinomial)
@@ -232,68 +233,10 @@ DIM_Y = None
 DIM_C = None
 DIM_Z = None
 DIM_L = None
+R_NONLINEARITY = None
 MODULE = None
 
 consider_constant = theano.gradient.disconnected_grad # changed from orginal
-
-
-def update_dict_of_lists(d_to_update, **d):
-    '''Updates a dict of list with kwargs.
-
-    Args:
-        d_to_update (dict): dictionary of lists.
-        **d: keyword arguments to append.
-
-    '''
-    for k, v in d.iteritems():
-        if k in d_to_update.keys():
-            d_to_update[k].append(v)
-        else:
-            d_to_update[k] = [v]
-
-# PRETTY -----------------------------------------------------------------------
-
-try:
-    _, _columns = os.popen('stty size', 'r').read().split()
-    _columns = int(_columns)
-except ValueError:
-    _columns = 1
-
-def print_section(s):
-    '''For printing sections to scripts nicely.
-
-    Args:
-        s (str): string of section
-
-    '''
-    h = s + ('-' * (_columns - len(s)))
-    print h
-
-# OPTIMIZER --------------------------------------------------------------------
-
-def set_optimizer(dloss, gloss, dparams, gparams,
-                  optimizer=None, op_args=None):
-    '''Sets the loss and optimizer and gets updates
-    
-    '''
-    op_args = op_args or {}
-    
-    logger.info("Setting optimizer. Using {} with args {}".format(
-        optimizer, op_args))
-    
-    if optimizer == 'rmsprop':
-        dupdates = lasagne.updates.rmsprop(dloss, dparams.values(), **op_args)
-        gcupdates = lasagne.updates.rmsprop(gloss, gparams.values(), **op_args)
-    elif optimizer == 'adam':
-        dupdates = lasagne.updates.adam(dloss, dparams.values(), **op_args)
-        gcupdates = lasagne.updates.adam(gloss, gparams.values(), **op_args)
-    else:
-        raise NotImplementedError(optimizer)
-
-    dgcupdates = dupdates.copy()
-    dgcupdates.update(gcupdates)
-    
-    return dgcupdates
     
 # COMPILE ----------------------------------------------------------------------
     
@@ -305,29 +248,28 @@ def compile_train(updates, inputs, outputs):
     
     return f
 
-
-def compile_generation(z, x):
+def compile_generation(z, outputs):
     logger.info("Compiling generation function")
-    f = theano.function([z], x)
+    f = theano.function([z], outputs=outputs)
     return f
 
 
 def compile_chain(z, gparams, num_steps_long=None, **model_args):
     logger.info("Compiling chain function")
-    p_lst_x_long, p_lst_y_long, p_lst_z_long = p_chain(
+    xs, ys, zs = p_chain(
         gparams, z, num_steps_long, **model_args)
     
-    f = theano.function([z], outputs=p_lst_x_long + p_lst_y_long)
+    f = theano.function([z], xs + ys)
     
     return f
 
 
 def compile_chain_x(x, gparams, num_steps_long=None, **model_args):
     logger.info("Compiling chain starting at x function")
-    p_lst_x_long, p_lst_y_long, p_lst_z_long = p_chain(
+    xs, ys, zs = p_chain(
         gparams, None, num_steps_long, x=x, **model_args)
     
-    f = theano.function([x], outputs=p_lst_x_long + p_lst_y_long)
+    f = theano.function([x], xs + ys)
     
     return f
 
@@ -335,11 +277,35 @@ def compile_chain_x(x, gparams, num_steps_long=None, **model_args):
 def compile_inpaint_chain(x, z, gparams, num_steps_long=None,
                           noise_damping=None, **model_args):
     logger.info("Compiling inpaint function")
-    p_lst_x_long, p_lst_y_long = inpaint_chain(
+    xs, ys = inpaint_chain(
         gparams, x, z, num_steps_long, noise_damping=noise_damping,
         **model_args)
     
-    f = theano.function([x, z], outputs=p_lst_x_long + p_lst_y_long)
+    f = theano.function([x, z], xs + ys)
+    
+    return f
+
+
+def compile_inpaint_x_chain(y, z, gparams, num_steps_long=None,
+                            noise_damping=None, **model_args):
+    logger.info("Compiling inpaint image from label function")
+    xs = inpaint_images(
+        gparams, y, z, num_steps_long, noise_damping=noise_damping,
+        **model_args)
+    
+    f = theano.function([y, z], xs)
+    
+    return f
+
+
+def compile_inpaint_y_chain(x, z, gparams, num_steps_long=None,
+                            noise_damping=None, **model_args):
+    logger.info("Compiling inpaint label from image function")
+    ys = inpaint_labels(
+        gparams, x, z, num_steps_long, noise_damping=noise_damping,
+        **model_args)
+    
+    f = theano.function([x, z], ys)
     
     return f
 
@@ -363,7 +329,8 @@ def visualizer(num_steps_long=None):
 
 # MODELS -----------------------------------------------------------------------
 
-def p_chain(p, z, num_iterations, pd_steps=None, x=None, **model_args):
+def p_chain(p, z, num_iterations, pd_steps=None, x=None,
+            y=None, test=False, **model_args):
     '''P chain
     
     .. note::
@@ -387,9 +354,9 @@ def p_chain(p, z, num_iterations, pd_steps=None, x=None, **model_args):
         out = z_to_x(p, z, **model_args)
         
         if MODULE._semi_supervised:
-            x, p = out
-            plst.append(p)
-            y = sample_multinomial(y)
+            x, p_ = out
+            plst.append(p_)
+            y = sample_multinomial(p_)
         else:
             x = out
             
@@ -398,12 +365,14 @@ def p_chain(p, z, num_iterations, pd_steps=None, x=None, **model_args):
         if i < num_iterations - 1:
             if MODULE._semi_supervised:
                 if i == num_iterations - pd_steps - 1:
-                    z = x_to_z(p, consider_constant(x), y, **model_args) # Changed this
+                    # Changed this
+                    z = x_to_z(p, consider_constant(x), y, **model_args) 
                 else:
                     z = x_to_z(p, x, y, **model_args)
             else:
                 if i == num_iterations - pd_steps - 1:
-                    z = x_to_z(p, consider_constant(x), **model_args) # Changed this
+                    # Changed this
+                    z = x_to_z(p, consider_constant(x), **model_args) 
                 else:
                     z = x_to_z(p, x, **model_args)
             
@@ -468,11 +437,10 @@ def q_chain(p, x, y, num_iterations, test=False, **model_args):
     ylst = [y]
     zlst = []
     
-    #x_ = inverse_sigmoid(x)
     x_ = x
     
     if MODULE._semi_supervised:
-        new_z = x_to_z(p, x_, y)
+        new_z = x_to_z(p, x_, y, **model_args)
     else:
         new_z = x_to_z(p, x_, **model_args)
         
@@ -495,8 +463,8 @@ def inpaint_chain(p, x, z, num_iterations, noise_damping=None, **model_args):
         out = z_to_x(p, z, noise_scale=sigma, **model_args)
         
         if MODULE._semi_supervised:
-            x, p = out
-            y = sample_multinomial(p)
+            x, p_ = out
+            y = sample_multinomial(p_)
             ylst.append(y)
         else:
             x = out
@@ -595,8 +563,8 @@ def inpaint_labels(p, x, z, num_iterations, **model_args):
     ylst = []
     
     for i in xrange(num_iterations):
-        x, p = z_to_x(p, z, **model_args)
-        p = sample_multinomial(y)
+        x, p_ = z_to_x(p, z, **model_args)
+        y = sample_multinomial(p_)
         ylst.append(y)
         z = x_to_z(p, x_gt, y, **model_args)
         
@@ -612,7 +580,7 @@ def inpaint_images(p, y, z, num_iterations, **model_args):
     xlst = []
     
     for i in xrange(num_iterations):
-        x, p = z_to_x(p, z, **model_args)
+        x, p_ = z_to_x(p, z, **model_args)
         xlst.append(x)
         z = x_to_z(p, x, y_gt, **model_args)
         
@@ -663,8 +631,7 @@ def make_model(num_steps=None, pd_steps=None, loss=None,
     z_in = T.matrix('z_in')
     y_in = T.matrix('y_in')
 
-    logger.info("Building graph")
-    
+    logger.info("Building graph")    
     if start_on_x:
         #x = inverse_sigmoid(x_in)
         x = x_in
@@ -677,11 +644,13 @@ def make_model(num_steps=None, pd_steps=None, loss=None,
                                  pd_steps=pd_steps, **model_args)
     else:
         logger.info('Starting chain at gaussian noise.')
-        p_lst_x, p_lst_p, p_lst_z = p_chain(gparams, z_in, num_steps,
-                                        pd_steps=pd_steps, **model_args)
-        p_lst_x_ = p_lst_x
+        outs = p_chain(gparams, z_in, num_steps, pd_steps=pd_steps,
+                       **model_args)
+        p_lst_x, p_lst_p, p_lst_z = outs
+        plst_x_ = p_lst_x
 
-    # p_list_y_ is pre-activation and sampling
+    # p_list_p is pre-activation and sampling
+    
     q_lst_x, q_lst_y, q_lst_z = q_chain(gparams, x_in, y_in, num_steps,
                                         **model_args)
 
@@ -709,20 +678,28 @@ def make_model(num_steps=None, pd_steps=None, loss=None,
         p_lst_x_r = [x.reshape((-1, DIM_C, DIM_X, DIM_Y))
                      for x in p_lst_x_e]
         p_lst_y_r = [sample_multinomial(p_) for p_ in p_lst_p_r]
-        p_lst_y = [y.reshape((n_samples, -1, DIM_L)) for y in l_lst_y_r]
+        p_lst_y = [y.reshape((n_samples, -1, DIM_L)) for y in p_lst_y_r]
         p_lst_z_r = [z.reshape((-1, DIM_Z))
                      for z in p_lst_z_e]
         
+        D_q_lst, D_feat_q = MODULE.discriminator(
+            dparams, q_lst_x[-1], q_lst_y[-1], q_lst_z[-1], **model_args)
+        
+        dloss = 0.
+        gloss = 0.
         for i in xrange(pd_steps):
             D_p_lst_, D_feat_p = MODULE.discriminator(
                 dparams, p_lst_x_r[-(i + 1)], p_lst_y_r[-(i + 1)],
                 p_lst_z_r[-(i + 1)], **model_args)
-            D_p_lst += D_p_lst_
-        D_p_lst = [D.reshape((n_samples, -1)) for D in D_p_lst]
-        D_q_lst, D_feat_q = MODULE.discriminator(
-            dparams, q_lst_x[-1], q_lst_y[-1], q_lst_z[-1], **model_args)
+            D_p_lst = [D.reshape((n_samples, x_in.shape[0], -1))
+                       for D in D_p_lst_]
         
-        d_loss = bgan_loss_2(D_p_lst, D_q_lst, p_lst_y, p_lst_p)
+            dloss_, gloss_ = bgan_loss_2(D_q_lst, D_p_lst,
+                                         p_lst_y[-(i + 1)],
+                                         p_lst_p[-(i + 1)])
+            dloss += dloss_
+            gloss += gloss_
+            
     else:
         for i in xrange(pd_steps):
             D_p_lst_, D_feat_p = MODULE.discriminator(
@@ -751,17 +728,23 @@ def make_model(num_steps=None, pd_steps=None, loss=None,
         'p(fake)': (p_lst_x[-1] < 0.5).mean()
     }
 
-    return dloss, gloss, dparams, gparams, [x_in, z_in], results, p_lst_x_
+    if MODULE._semi_supervised:
+        inputs = [x_in, z_in, y_in]
+    else:
+        inputs = [x_in, z_in]
+
+    return dloss, gloss, dparams, gparams, inputs, results, p_lst_x, p_lst_p
 
 # DATA -------------------------------------------------------------------------
 
-def prepare_data(source, pad_to=None, batch_size=None, **kwargs):
+def prepare_data(source, pad_to=None, batch_size=None, tanh=None, **kwargs):
     logger.info('Perparing data from `{}`'.format(source))
-    global DIM_X, DIM_Y, DIM_C
+    global DIM_X, DIM_Y, DIM_C, DIM_L
     
     if source is None: raise ValueError('Source must be provided.')
     
-    datasets, data_shapes = load_stream(source=source, batch_size=batch_size)
+    datasets, data_shapes = load_stream(source=source, batch_size=batch_size,
+                                        tanh=tanh)
     if pad_to is not None:
         logger.info('Padding data to {}'.format(pad_to))
         for k in datasets.keys():
@@ -777,15 +760,22 @@ def prepare_data(source, pad_to=None, batch_size=None, **kwargs):
     
     logger.info('Setting DIM_X to {}, DIM_Y to {}, and DIM_C to {}'.format(
         shape[2], shape[3], shape[1]))
+
     DIM_X = shape[2]
     DIM_Y = shape[3]
     DIM_C = shape[1]
+    
+    shape = data_shapes['train'][1]
+    logger.info('Setting DIM_L to {}'.format(shape[1]))
+    DIM_L = shape[1]
     
     return datasets, data_shapes
 
 # TRAIN ------------------------------------------------------------------------
 
-def train(train_fn, gen_fn, chain_fn, chain_fn_x, inpaint_fn, inpaint_fn_d,
+def train(train_fn, gen_fn,
+          chain_fn, chain_fn_x,
+          inpaint_fn, inpaint_fn_d, inpaint_fn_x, inpaint_fn_y,
           save_fn, datasets, data_shapes, persist_p_chain=None,
           latent_sparse=None, num_epochs=None, blending_rate=None,
           latent_sparse_num=None, batch_size=None, binary_dir=None,
@@ -810,6 +800,7 @@ def train(train_fn, gen_fn, chain_fn, chain_fn_x, inpaint_fn, inpaint_fn_d,
         
         for batch in iterator:
             x_in, label = batch
+            
             if batch_size is None:
                 batch_size = x_in.shape[0]
             
@@ -831,8 +822,10 @@ def train(train_fn, gen_fn, chain_fn, chain_fn_x, inpaint_fn, inpaint_fn_d,
 
             if latent_sparse:
                 z_in[:, latent_sparse_num:] *= 0.0
-
-            outs = train_fn(x_in, z_in)
+            if MODULE._semi_supervised:
+                outs = train_fn(x_in, z_in, label)
+            else:
+                outs = train_fn(x_in, z_in)
             update_dict_of_lists(e_results, **outs)
             
 <<<<<<< HEAD
@@ -857,70 +850,93 @@ def train(train_fn, gen_fn, chain_fn, chain_fn_x, inpaint_fn, inpaint_fn_d,
         save_fn(out_path=binary_dir, suffix=suffix)
         
         # Images
+        logger.debug('Saving images to {}'.format(image_dir))
         iterator = datasets['test'].get_epoch_iterator()
         x_in_, label_ = iterator.next()
-        logger.debug('Saving images to {}'.format(image_dir))
         z_im = rng.normal(size=(x_in_.shape[0], DIM_Z)).astype(floatX)
-        x_gen = gen_fn(z_im)
-        x_gen = 0.5 * (x_gen + 1.)
+        x_gen, y_gen = gen_fn(z_im)
+        x_gen = R_NONLINEARITY(x_gen)
         x_chain = chain_fn(z_im)
-        x_chain_x = chain_fn_x(x_in_)
-        inpaint_chain = inpaint_fn(x_in_, z_im)
-        inpaint_chain_d = inpaint_fn_d(x_in_, z_im)
+        x_chain = x_chain[:(len(x_chain) // 2)]
+        y_x_chain = inpaint_fn_x(np.array(np.eye(10).astype(floatX)), z_im[:10])
+        
+        x_y_chain = inpaint_fn_y(x_in_, z_im)
+        x_y_chain = np.array(
+            [np.argmax(x_y, axis=1) for x_y in x_y_chain]).transpose(1, 0)
+        x_y_chain = x_y_chain[:64]
+        #print x_y_chain
+        xy_labels = []
+        for c in x_y_chain:
+            prob = np.bincount(c, minlength=DIM_L) / float(c.shape[0])
+            args = np.argsort(prob)[::-1]
+            s = np.sort(prob)[::-1]
+            lab = ', '.join(['{}({:.2f})'.format(a_, s_)
+                             for a_, s_ in zip(args, s)][:2])
+            xy_labels.append(lab)
+        #print xy_labels
+        
+        #x_chain_x = chain_fn_x(x_in_[:64])
+        #inpaint_chain = inpaint_fn(x_in_[:64], z_im)
+        #inpaint_chain_d = inpaint_fn_d(x_in_[:64], z_im)
         
         plot_images(
-            x_gen[:64], path.join(image_dir, 'gen_epoch_{}'.format(epoch)))
-        plot_images(x_in_[:64], path.join(image_dir, 'gt'))
+            x_gen[:64], path.join(image_dir, 'gen_epoch_{}'.format(epoch)),
+            labels=np.argmax(y_gen[:64], axis=1))
+        plot_images(R_NONLINEARITY(x_in_[:64]), path.join(image_dir, 'gt'),
+                    labels=np.argmax(label_[:64], axis=1))
+        plot_images(R_NONLINEARITY(x_in_[:64]), path.join(image_dir, 'gt_y'),
+                    labels=xy_labels)
         
+        #assert False
+        '''
         chain = []
         for x in inpaint_chain:
-            x = x[:64]
             x = x.reshape(8, 8, DIM_C, DIM_X, DIM_Y)
             x_ = np.zeros((16, 8, DIM_C, DIM_X, DIM_Y))
             x_[:8] = x
             x_[8:] = x_in_[:64].reshape(8, 8, DIM_C, DIM_X, DIM_Y)
             x = x_.transpose(0, 3, 1, 4, 2)
             x = x.reshape(16 * DIM_X, 8 * DIM_Y, DIM_C)
-            x = 0.5 * (x + 1.)
+            x = R_NONLINEARITY(x)
             chain.append(x)
         
         imageio.mimsave(path.join(image_dir, 'gen_inpaint.gif'), chain)
         
         chain = []
         for x in inpaint_chain_d:
-            x = x[:64]
             x = x.reshape(8, 8, DIM_C, DIM_X, DIM_Y)
             x_ = np.zeros((16, 8, DIM_C, DIM_X, DIM_Y))
             x_[:8] = x
             x_[8:] = x_in_[:64].reshape(8, 8, DIM_C, DIM_X, DIM_Y)
             x = x_.transpose(0, 3, 1, 4, 2)
             x = x.reshape(16 * DIM_X, 8 * DIM_Y, DIM_C)
-            x = 0.5 * (x + 1.)
+            x = R_NONLINEARITY(x)
             chain.append(x)
         
         imageio.mimsave(path.join(image_dir, 'gen_inpaint_d.gif'), chain)
         
+        '''
         chain = []
-        for x in x_chain:
-            x = x[:64]
-            x = x.reshape(8, 8, DIM_C, DIM_X, DIM_Y)
+        for x in y_x_chain:
+            x = x.reshape(2, 5, DIM_C, DIM_X, DIM_Y)
             x = x.transpose(0, 3, 1, 4, 2)
-            x = x.reshape(8 * DIM_X, 8 * DIM_Y, DIM_C)
-            x = 0.5 * (x + 1.)
+            x = x.reshape(2 * DIM_X, 5 * DIM_Y, DIM_C)
+            x = R_NONLINEARITY(x)
             chain.append(x)
         
-        imageio.mimsave(path.join(image_dir, 'gen_chain.gif'), chain)
+        imageio.mimsave(path.join(image_dir, 'gen_y_x_chain.gif'), chain)
         
+        '''
         chain = []
         for x in x_chain_x:
-            x = x[:64]
             x = x.reshape(8, 8, DIM_C, DIM_X, DIM_Y)
             x = x.transpose(0, 3, 1, 4, 2)
             x = x.reshape(8 * DIM_X, 8 * DIM_Y, DIM_C)
-            x = 0.5 * (x + 1.)
+            x = R_NONLINEARITY(x)
             chain.append(x)
             
         imageio.mimsave(path.join(image_dir, 'gen_chain_x.gif'), chain)
+        '''
 
     
 # MAIN -------------------------------------------------------------------------
@@ -931,7 +947,7 @@ _model_defaults = dict(
     dim_z=128,
     loss='bgan',
     n_samples=10,
-    start_on_x=False
+    start_on_x=False,
 )
 
 _optimizer_defaults = dict(
@@ -941,7 +957,8 @@ _optimizer_defaults = dict(
 
 _data_defaults = dict(
     batch_size=64,
-    pad_to=None#(32, 32)
+    pad_to=None,#(32, 32),
+    nonlinearity='tanh'
 )
 
 _train_defaults = dict(
@@ -960,42 +977,106 @@ _visualize_defaults = dict(
 )
 
 
-def test():
-    '''
-    TODO
+def test(datasets, num_steps=None, pd_steps=None, loss=None,
+         n_samples=None, start_on_x=None, **model_args):
+    '''Test model and graph.
+    
     '''
     
-    inputs, d = make_model(**model_args)
-    x = datasets['train'].get_epoch_iterator().next()[0]
+    if MODULE._semi_supervised and loss != 'bgan':
+        raise NotImplementedError('Currently, semi-supervised is only '
+                                  'implemented with BGAN (got {})'.format(
+                                    loss))
+    
+    logger.info("Initializing parameters from {}".format(MODULE.__name__))
+    gparams = MODULE.init_gparams({}, **model_args)
+    dparams = MODULE.init_dparams({}, **model_args)
+
+    logger.info("Setting input variables")
+    x_in = T.tensor4('x_in')
+    z_in = T.matrix('z_in')
+    y_in = T.matrix('y_in')
+    inputs = [x_in, z_in, y_in]
+    
+    d = MODULE.z_to_x(gparams, z_in, return_tensors=True, **model_args)
+    d.update(MODULE.x_to_z(gparams, x_in, y_in, return_tensors=True,
+                           **model_args))
+    
+    if MODULE._semi_supervised:
+        x = d['x_f']
+        p = d['y_f']
+        z = d['z_f']
+        p_e = T.tile(p[None, :, :], (n_samples, 1, 1))
+        d['p_e'] = p_e
+        p_r = p_e.reshape((-1, DIM_L))
+        d['p_r'] = p_r
+        x_e = T.tile(x[None, :, :, :, :], (n_samples, 1, 1, 1, 1))
+        d['x_e'] = x_e
+        z_e = T.tile(z[None, :, :], (n_samples, 1, 1))
+        d['z_e'] = z_e
+        x_r = x_e.reshape((-1, DIM_C, DIM_X, DIM_Y))
+        d['x_r'] = x_r
+        y_r = sample_multinomial(p_r)
+        d['y_r'] = y_r
+        y = y_r.reshape((n_samples, -1, DIM_L))
+        d['y'] = y
+        z_r = z_e.reshape((-1, DIM_Z))
+        d['z_r'] = z_r
+        
+        d.update(**MODULE.discriminator(
+            dparams, x_r, y_r, z_r,
+            return_tensors=True, **model_args))
+        
+        dloss, gloss = bgan_loss_2(
+            [d['d_ff_1']], [d['d_conv_1'].reshape((n_samples, x.shape[0], -1))], y, p)
+        d['dloss'] = dloss
+        d['gloss'] = gloss
+    
+    x, y = datasets['train'].get_epoch_iterator().next()
     z = rng.normal(size=(x.shape[0], DIM_Z)).astype(floatX)
     
     for k, v in d.items():
         print 'Trying {}'.format(k)
         f = theano.function(inputs, v, on_unused_input='ignore')
-        print f(x, z).shape
+        print f(x, z, y).shape
     assert False, d
+    
+
+def reload_parameters(g_param_file=None, d_param_file=None):
+    if g_param_file is not None:
+        gparams = np.load(g_param_file)
+    else:
+        gparams = {}
+        
+    if dparam_file is not None:
+        dparams = np.load(d_param_file)
+        
+    return gparams, dparams
     
 
 def main(source, data_args, model_args, optimizer_args, train_args,
          visualize_args):
+
     datasets, data_shapes = prepare_data(args.source, **data_args)
     model_args.update(dim_x=DIM_X, dim_y=DIM_Y, dim_c=DIM_C)
     
     logger.info("Forming model with args {}".format(model_args))
-    
-    dloss, gloss, dparams, gparams, inputs, results, x_chain = make_model(
+    #test(datasets, **model_args)
+    dloss, gloss, dparams, gparams, inputs, results, x_chain, y_chain = make_model(
         **model_args)
+    
     updates = set_optimizer(dloss, gloss, dparams, gparams, **optimizer_args)
     
     train_fn = compile_train(updates, inputs, results)
-    gen_fn = compile_generation(inputs[1], x_chain[-1])
+    gen_fn = compile_generation(inputs[1], x_chain[-1], y_chain[-1])
     chain_fn = compile_chain(inputs[1], gparams,
                              num_steps_long=visualize_args['num_steps_long'],
                              **model_args)
-    chain_fn_x = compile_chain_x(inputs[0], gparams,
-                                 num_steps_long=visualize_args['num_steps_long'],
-                                 **model_args)
-    
+    #chain_fn_x = compile_chain_x(inputs[0], gparams,
+    #                             num_steps_long=visualize_args['num_steps_long'],
+    #                             **model_args)
+    chain_fn_x = None
+    '''
     inpaint_fn = compile_inpaint_chain(
         inputs[0], inputs[1], gparams,
         num_steps_long=visualize_args['num_steps_long'], **model_args)
@@ -1004,17 +1085,35 @@ def main(source, data_args, model_args, optimizer_args, train_args,
         inputs[0], inputs[1], gparams,
         noise_damping=visualize_args['noise_damping'],
         num_steps_long=visualize_args['num_steps_long'], **model_args)
+    '''
+    
+    inpaint_fn_x = compile_inpaint_x_chain(
+        inputs[2], inputs[1], gparams,
+        num_steps_long=visualize_args['num_steps_long'], **model_args)
+    
+    inpaint_fn_y = compile_inpaint_y_chain(
+        inputs[0], inputs[1], gparams,
+        num_steps_long=visualize_args['num_steps_long'], **model_args)
+    
+    inpaint_fn = None
+    inpaint_fn_d = None
     
     def save(out_path=None, suffix=''):
         if out_path is None:
             return
+        gparams_np = dict((k, v.eval()) for k, v in gparams.items())
+        dparams_np = dict((k, v.eval()) for k, v in dparams.items())
         
-        np.savez(path.join(out_path, 'g_params{}.npz'.format(suffix)), gparams)
-        np.savez(path.join(out_path, 'd_params{}.npz'.format(suffix)), dparams)
+        np.savez(path.join(out_path, 'g_params{}.npz'.format(suffix)),
+                 **gparams_np)
+        np.savez(path.join(out_path, 'd_params{}.npz'.format(suffix)),
+                 **dparams_np)
     
     try:
         logger.info('Training with args {}'.format(train_args))
-        train(train_fn, gen_fn, chain_fn, chain_fn_x, inpaint_fn, inpaint_fn_d,
+        train(train_fn, gen_fn,
+              chain_fn, chain_fn_x,
+              inpaint_fn, inpaint_fn_d, inpaint_fn_x, inpaint_fn_y,
               save, datasets, data_shapes, **train_args)
     except KeyboardInterrupt:
         logger.info('Training interrupted')
@@ -1050,7 +1149,7 @@ def config(data_args, model_args, optimizer_args, train_args, visualizer_args,
 
     
 if __name__ == '__main__':
-    MODULE = conv1
+    MODULE = conv_ss_2
     parser = make_argument_parser()
     args = parser.parse_args()
     set_stream_logger(args.verbosity)
@@ -1064,6 +1163,17 @@ if __name__ == '__main__':
     model_args.update(**_model_defaults)
     DIM_Z = model_args['dim_z']
     
+    nonlinearity = data_args.pop('nonlinearity')
+    if nonlinearity == 'sigmoid':
+        model_args['nonlinearity'] = 'lambda x: tensor.nnet.sigmoid(x)'
+        R_NONLINEARITY = lambda x: x
+    elif nonlinearity == 'tanh':
+        model_args['nonlinearity'] = 'lambda x: tensor.tanh(x)'
+        R_NONLINEARITY = lambda x: 0.5 * (x + 1.)
+        data_args['tanh'] = True
+    else:
+        raise
+        
     optimizer_args = {}
     optimizer_args.update(**_optimizer_defaults)
     

@@ -2,12 +2,19 @@
 Tools for plotting / visualization
 """
 
+import sys
+import warnings
+
+import imageio
 import matplotlib
 matplotlib.use('Agg')  # no displayed figures -- need to call before loading pylab
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import numpy as np
-import warnings
+
+
+# UTILS ########################################################################
+
 
 def is_square(shp, n_colors=1):
     """
@@ -18,7 +25,8 @@ def is_square(shp, n_colors=1):
     is_sqr_colors = (shp == n_colors*np.round(np.sqrt(np.array(shp)/float(n_colors)))**2)
     return is_sqr | is_sqr_colors
 
-def show_receptive_fields(theta, P=None, n_colors=None, max_display=100, grid_wa=None,title=""):
+def show_receptive_fields(theta, P=None, n_colors=None, max_display=100,
+                          grid_wa=None, labels=None, captions=None, title=""):
     """
     Display receptive fields in a grid. Tries to intelligently guess whether to treat the rows,
     the columns, or the last two axes together as containing the receptive fields. It does this
@@ -74,6 +82,9 @@ def show_receptive_fields(theta, P=None, n_colors=None, max_display=100, grid_wa
     if grid_wa is None:
         grid_wa = int(np.ceil(np.sqrt(float(nf))))
     grid_wb = int(np.ceil(nf / float(grid_wa)))
+    
+    if captions is not None:
+        grid_wa *= 2
 
     if P is not None:
         theta = np.dot(P, theta)
@@ -81,69 +92,101 @@ def show_receptive_fields(theta, P=None, n_colors=None, max_display=100, grid_wa
     vmin = np.min(theta)
     vmax = np.max(theta)
 
-
     for jj in range(nf):
-        plt.subplot(grid_wa, grid_wb, jj+1)
+        if captions is not None:
+            jj_ = 2 * grid_wb * (jj // grid_wb) + (jj % grid_wb)
+        else:
+            jj_ = jj
+            
+        plt.subplot(grid_wa, grid_wb, jj_ + 1)
         
         if jj == int(np.sqrt(nf)/2) - 1:
             plt.title(title)
 
-        ptch = np.zeros((n_colors*img_w**2,))
+        ptch = np.zeros((n_colors * img_w ** 2,))
         ptch[:theta.shape[0]] = theta[:,jj]
         if n_colors==3:
             ptch = ptch.reshape((n_colors, img_w, img_w))
-            ptch = ptch.transpose((1,2,0)) # move color channels to end
+            ptch = ptch.transpose((1, 2, 0)) # move color channels to end
         else:
             ptch = ptch.reshape((img_w, img_w))
         #ptch -= vmin
         #ptch /= vmax-vmin
-
-        plt.imshow(ptch, interpolation='nearest', cmap=cm.Greys_r, vmin = 0.0, vmax = 1.0)
+        
+        plt.imshow(ptch, interpolation='nearest', cmap=cm.Greys_r, vmin = 0.0,
+                   vmax = 1.0)
+        
+        if labels is not None:
+            if len(str(labels[jj])) > 8:
+                plt.text(0., -1., labels[jj], fontsize=6)
+            elif len(str(labels[jj])) > 16:
+                plt.text(0., -1., labels[jj], fontsize=4)
+            elif len(str(labels[jj])) > 24:
+                plt.text(0., -1., labels[jj], fontsize=2)
+            else:
+                plt.text(0., -1., labels[jj])
+                
+        plt.axis('off')
+        if captions is not None:
+            plt.subplot(grid_wa, grid_wb, jj_ + 1 + grid_wb)
+            cap = []
+            for cap_ in captions[jj]:
+                if len(cap_) < 20:
+                    cap.append(cap_)
+                else:
+                    cap += [cap_[x:x+20] for x in range(0, len(cap_), 20)]
+            plt.text(0., 1., '\n'.join(cap), fontsize=8,
+                     verticalalignment='top')
 
         plt.axis('off')
-
-    
 
     return True
 
 
-def plot_images(X, fname, title=""):
-    """
-    Plot images in a grid.
-    X is expected to be a 4d tensor of dimensions [# images]x[# colors]x[height]x[width]
-    """
-    
-    '''
-    # Not sure we need any of this
-    X = X.clip(0.0,1.0)
-    
-    if X.shape == (64,784):
-        X = X.reshape((64,1,28,28))
-    elif X.shape == (64,96*96*3):
-        X = X.reshape((64,3,96,96))
-        X = X[:25]
-    elif X.shape == (64,32*32*3):
-        X = X.reshape((64,3,32,32))
-    elif X.shape == (64,64*64*3):
-        X = X.reshape((64,3,64,64))
-    else:
-        raise Exception("INVALID SHAPE OPTION")
-    '''
-
-    ## plot
-    # move color to end
+def plot_images(X=None, labels=None, captions=None, title="",
+                file_path=None):
     Xcol = X.reshape((X.shape[0], -1,)).T
-    plt.figure(figsize=[8,8])
-    if show_receptive_fields(Xcol, n_colors=X.shape[1], title=title):
-        #plt.savefig(fname + '.pdf')
-        plt.savefig(fname + ".png")
+    if captions is None:
+        plt.figure(figsize=[8, 8])
+    else:
+        plt.figure(figsize=[16, 32])
+    
+    if show_receptive_fields(Xcol, n_colors=X.shape[1], labels=labels,
+                             title=title, captions=captions):
+        plt.savefig(file_path + '.png')
     else:
         warnings.warn('Images unexpected shape.')
     
     plt.close()
+    
+   
+def plot_chain(chain, shape=(8, 8), dim_c=None, dim_x=None, dim_y=None,
+               file_path=None):
+    chain = chain[:, :(shape[0]*shape[1]), ...]
+    chain_ = []
+    for i in xrange(chain.shape[0]):
+        x = chain[i]
+        x = x.reshape(shape[0], shape[1], dim_c, dim_x, dim_y)
+        x = x.transpose(0, 3, 1, 4, 2)
+        x = x.reshape(shape[0] * dim_x, shape[1] * dim_y, dim_c)
+        chain_.append(x)
+    imageio.mimsave(file_path, chain_)
+    
+    
+def plot_inpaint_chain(chain, x_gt, shape=(8, 8), dim_c=None, dim_x=None,
+                       dim_y=None, file_path=None):
+    chain_ = []
+    for x in chain:
+        x = x.reshape(shape[0], shape[1], dim_c, dim_x, dim_y)
+        x_ = np.zeros((2 * shape[0], shape[1], dim_c, dim_x, dim_y))
+        x_[:shape[0]] = x
+        x_[shape[0]:] = x_gt[:shape[0]*shape[1]].reshape(
+            shape[0], shape[1], dim_c, dim_x, dim_y)
+        x = x_.transpose(0, 3, 1, 4, 2)
+        x = x.reshape(2 * shape[0] * dim_x, shape[1] * dim_y, dim_c)
+        chain_.append(x)
+    imageio.mimsave(file_path, chain_)
 
-    ## save as a .npz file
-    #np.savez(fname + '.npz', X=X)
 
 if __name__ == "__main__":
 
