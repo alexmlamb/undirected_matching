@@ -364,7 +364,8 @@ if __name__ == "__main__":
 
     z_inf = q_lst_z[-1]
 
-    closs,cacc = classifier(cparams,join2(z_inf,encoder_features[0]),true_y)
+    print "only using latent variables, not using encoder features!"
+    closs,cacc = classifier(cparams,join2(z_inf,encoder_features[0]*0.0),true_y)
 
     dloss, gloss = lsgan_loss(D_q_lst, D_p_lst)
 
