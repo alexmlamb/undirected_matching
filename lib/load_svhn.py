@@ -72,10 +72,13 @@ class SvhnData:
 
 
 
-    def getBatch(self, index, segment, mb_size):
+    def getBatch(self, index, segment, mb_size, rebalance=False):
 
         #if self.index + mb_size + 10 >= self.numExamples:
         #    self.index = 0
+
+        if rebalance:
+            raise Exception('not implemented')
 
         if segment == "train":
             mb_x = self.train_X[index : index + mb_size]

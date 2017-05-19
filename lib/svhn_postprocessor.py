@@ -27,9 +27,10 @@ from load_file import normalize, denormalize
 svhnData = SvhnData()
 
 print "using UM's encoder up"
-model_name = "17275_model.pkl"
+#model_name = "19080_model.pkl"
+model_name = "20007_model.pkl"
 
-param_obj = pickle.load(open("models/backup/" + model_name, "r"))
+param_obj = pickle.load(open("models/" + model_name, "r"))
 
 print param_obj.keys()
 
@@ -43,7 +44,8 @@ z_inf,z_feat = x_to_z(gparams, inverse_sigmoid(input_x))
 d_val, d_feat = discriminator(dparams, input_x, z_inf)
 
 #z_feat, d_feat[1]
-get_z = theano.function([input_x], outputs = [d_feat[0],d_feat[1]])
+#dfeat0, dfeat1 is what works
+get_z = theano.function([input_x], outputs = [d_feat[0]])
 
 rec = theano.function([input_x], outputs = [T.nnet.sigmoid(z_to_x(gparams,x_to_z(gparams,inverse_sigmoid(input_x))[0]))])
 
@@ -57,10 +59,10 @@ ylst_test = []
 print "all train set"
 print "only using eoz features"
 
-for ind in range(0,1000,64):
+for ind in range(0,1000,500):
 
-    svhn_batch = svhnData.getBatch(mb_size=64,index=ind,segment="train")
-    x = normalize(svhn_batch['x']).reshape((64,3*32*32))
+    svhn_batch = svhnData.getBatch(mb_size=500,index=ind,segment="train")
+    x = normalize(svhn_batch['x']).reshape((500,3*32*32))
     y = svhn_batch['y']
 
     zstuff = get_z(x)
@@ -69,7 +71,7 @@ for ind in range(0,1000,64):
     dhlst.append(np.concatenate(zstuff,axis=1))
     ylst.append(y)
 
-for ind in range(0,20000,64):
+for ind in range(0,26032-64,64):
     svhn_batch = svhnData.getBatch(mb_size=64,index=ind,segment="test")
     x = normalize(svhn_batch['x']).reshape((64,3*32*32))
     y = svhn_batch['y']
@@ -83,6 +85,9 @@ Y_train = np.vstack(ylst).flatten()
 X_test = np.vstack(dhlst_test)
 Y_test = np.vstack(ylst_test).flatten()
 
+print "label dist"
+for j in range(0,9):
+    print j, Y_train[Y_train==j].shape
 
 print "starting training!"
 print "using svm linear"
