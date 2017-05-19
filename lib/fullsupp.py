@@ -468,7 +468,7 @@ if __name__ == "__main__":
                 for ind in range(0,26032-64,64):
                     batch = svhnData.getBatch(index=ind,mb_size=64,segment="test")
 
-                    x_in_c = normalize(svhn_batch['x']).reshape((64,32*32*3))
+                    x_in_c = normalize(batch['x']).reshape((64,32*32*3))
 
                     closs_test, cacc_test = test_classifier(x_in_c, batch['y'])
 
