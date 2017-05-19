@@ -151,8 +151,8 @@ def x_to_z(p,x):
 
 def classifier(p,z,true_y):
 
-    print "turning off gradients from classifier"
-    z = consider_constant(z)
+    print "turning ON gradients from classifier"
+    #z = consider_constant(z)
 
     h1 = fflayer(tparams=p,state_below=z,options={},prefix='c_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
 
@@ -397,9 +397,11 @@ if __name__ == "__main__":
 
     train_disc_gen_classifier = theano.function(inputs = [x_in, z_in,true_y], outputs=[dloss,p_lst_x[-1],p_lst_z[-1],closs,cacc,feature_matching_loss,gloss], updates=dgcupdates,on_unused_input='ignore')
 
+    
+
     train_disc_gen = theano.function(inputs = [x_in, z_in], outputs=[dloss,p_lst_x[-1],p_lst_z[-1],feature_matching_loss], updates=dgupdates,on_unused_input='ignore')
 
-    #test_classifier = theano.function(inputs = [x_in,true_y], outputs=[closs,cacc],on_unused_input='ignore')
+    test_classifier = theano.function(inputs = [x_in,true_y], outputs=[closs,cacc],on_unused_input='ignore')
 
     get_features = theano.function([x_in], outputs=D_feat_q+encoder_features)
 
@@ -436,21 +438,15 @@ if __name__ == "__main__":
 
             #just do a quick update using the whole thing.  
             
+
             ind = random.randint(0,604388-64)
             svhn_batch = svhnData.getBatch(mb_size=64,index=ind,segment="train")
             x_in = normalize(svhn_batch['x']).reshape((64,32*32*3))
-            t2 = time.time()
-            train_disc_gen(x_in,z_in)
-            print time.time() - t2, "time to do one training update"
+            y_in = svhn_batch['y']
+
+            dloss,gen_x,z_out_p,closs,cacc,fm_loss,gloss = train_disc_gen_classifier(x_in,z_in,y_in)
 
             if random.uniform(0,1) < 0.1:
-                ind = random.randint(0,num_labeled_examples_use-64)
-                svhn_batch = svhnData.getBatch(mb_size=64,index=ind,segment="train")
-                x_in = normalize(svhn_batch['x']).reshape((64,32*32*3))
-                y_in = svhn_batch['y']
-
-                dloss,gen_x,z_out_p,closs,cacc,fm_loss,gloss = train_disc_gen_classifier(x_in,z_in,y_in)
-
                 print "iteration", iteration
                 print "dloss", dloss
                 print "gen_x mean", gen_x.mean()
@@ -466,39 +462,18 @@ if __name__ == "__main__":
 
                 print "Train SVM on Discriminator Features and SVM on Encoder Features"
 
-                flst = []
-                ylst = []
+                test_acc = []
 
                 for ind in range(0,26032-64,64):
                     batch = svhnData.getBatch(index=ind,mb_size=64,segment="test")
 
-                    flst.append(np.concatenate([get_features(normalize(batch['x']).reshape((64,3*32*32)))[0]],axis=1))
-                    ylst.append(batch['y'])
-                    
-                x_test = np.vstack(flst)
-                y_test = np.vstack(ylst).flatten()
+                    x_in_c = normalize(svhn_batch['x']).reshape((64,32*32*3))
 
-                flst = []
-                ylst = []
+                    closs_test, cacc_test = test_classifier(x_in_c, batch['y'])
 
-                for ind in range(0,1000,64):
-                    batch = svhnData.getBatch(index=ind,mb_size=64,segment="train")
+                    test_acc.append(cacc_test)
 
-                    flst.append(np.concatenate([get_features(normalize(batch['x']).reshape((64,3*32*32)))[0]],axis=1))
-                    ylst.append(batch['y'])
-
-                x_train = np.vstack(flst)
-                y_train = np.vstack(ylst).flatten()
-
-                model = svm.LinearSVC(C=1.0,loss='squared_hinge')
-
-                model.fit(x_train, y_train)
-
-                y_pred = model.predict(x_test)
-
-                test_acc = np.mean(np.equal(y_pred, y_test))
-
-                print "test acc", test_acc
+                print "test acc", sum(test_acc) / len(test_acc)
 
             #plot_images(gen_x, "plots/" + slurm_name + "_gen.png")
             x_in_rec = normalize(svhnData.getBatch(index=0,mb_size=64,segment="test")['x'])
