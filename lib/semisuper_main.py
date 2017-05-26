@@ -81,11 +81,11 @@ def init_dparams(p):
     p = param_init_convlayer(options={},params=p,prefix='DC_4',nin=128,nout=256,kernel_len=5,batch_norm=False)
     p = param_init_convlayer(options={},params=p,prefix='DC_5',nin=256,nout=512,kernel_len=5,batch_norm=False)
 
-    p = param_init_fflayer(options={},params=p,prefix='D_zh1',nin=nl,nout=512,ortho=False,batch_norm=False)
+    #p = param_init_fflayer(options={},params=p,prefix='D_zh1',nin=nl,nout=512,ortho=False,batch_norm=False)
 
-    p = param_init_fflayer(options={},params=p,prefix='D_1',nin=512+nl+512*4*4,nout=nfd,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='D_2',nin=512+nfd,nout=nfd,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='D_3',nin=512+nfd,nout=nfd,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='D_1',nin=nl+512*4*4,nout=nfd,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='D_2',nin=nfd,nout=nfd,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='D_3',nin=nfd,nout=nfd,ortho=False,batch_norm=False)
 
     p = param_init_fflayer(options={},params=p,prefix='D_o_1',nin=nfd,nout=1,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='D_o_2',nin=nfd,nout=1,ortho=False,batch_norm=False)
@@ -181,15 +181,15 @@ def discriminator(p,x,z):
 
     print "zh layer and NO bias thing"
 
-    zh1 = fflayer(tparams=p,state_below=z,options={},prefix='D_zh1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',mean_ln=False)
+    #zh1 = fflayer(tparams=p,state_below=z,options={},prefix='D_zh1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',mean_ln=False)
 
-    inp = join3(z,zh1,dc_5.flatten(2))
+    inp = join2(z,dc_5.flatten(2))
 
     h1 = fflayer(tparams=p,state_below=inp,options={},prefix='D_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',mean_ln=False)
 
-    h2 = fflayer(tparams=p,state_below=join2(zh1,h1),options={},prefix='D_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)', mean_ln=False)
+    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='D_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)', mean_ln=False)
 
-    h3 = fflayer(tparams=p,state_below=join2(zh1,h2),options={},prefix='D_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)', mean_ln=False)
+    h3 = fflayer(tparams=p,state_below=h2,options={},prefix='D_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)', mean_ln=False)
 
     D1 = fflayer(tparams=p,state_below=h1,options={},prefix='D_o_1',activ='lambda x: x')
     D2 = fflayer(tparams=p,state_below=h2,options={},prefix='D_o_2',activ='lambda x: x')
@@ -198,6 +198,7 @@ def discriminator(p,x,z):
     D4 = convlayer(tparams=p,state_below=dc_3,options={},prefix='D_o_4',activ='lambda x: x',stride=2)
     D5 = convlayer(tparams=p,state_below=dc_4,options={},prefix='D_o_5',activ='lambda x: x',stride=2)
     D6 = convlayer(tparams=p,state_below=dc_5,options={},prefix='D_o_6',activ='lambda x: x',stride=2)
+
 
     print "special thing in D"
     return [D1,D2,D3,D4,D5,D6], [dc_5.flatten(2),D6.flatten(2),h1,h2,h3]
@@ -326,7 +327,7 @@ if __name__ == "__main__":
 
 
     if True: 
-        model_name = "19080_model.pkl"
+        model_name = "18468_model.pkl"
         print "loading from model name", model_name
 
         param_obj = pickle.load(open("models/" + model_name, "r"))
@@ -382,12 +383,12 @@ if __name__ == "__main__":
     #improvement_objective = improvement_loss_weight * improvement_loss(D_p_lst_1, D_p_lst_2)
     #gloss += improvement_objective
 
-    dupdates = lasagne.updates.rmsprop(dloss, dparams.values(),0.0001)
+    dupdates = lasagne.updates.rmsprop(dloss, dparams.values(),0.0001*0)
     gloss_grads = T.grad(gloss, gparams.values(), disconnected_inputs='ignore')
-    gupdates = lasagne.updates.rmsprop(gloss_grads, gparams.values(),0.0001)
+    gupdates = lasagne.updates.rmsprop(gloss_grads, gparams.values(),0.0001*0)
 
-    gcupdates = lasagne.updates.rmsprop(gloss + closs, gparams.values() + cparams.values(),0.0001)
-    dcupdates = lasagne.updates.rmsprop(dloss + closs, dparams.values() + cparams.values(),0.0001)
+    gcupdates = lasagne.updates.rmsprop(gloss + closs, gparams.values() + cparams.values(),0.0001*0)
+    dcupdates = lasagne.updates.rmsprop(dloss + closs, dparams.values() + cparams.values(),0.0001*0)
 
     dgupdates = dupdates.copy()
     dgupdates.update(gupdates)

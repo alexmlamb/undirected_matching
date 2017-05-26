@@ -77,7 +77,7 @@ def param_init_convlayer(options,params,prefix='ff',nin=None,nout=None,kernel_le
 
     return params
 
-def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor.tanh(x)',stride=None):
+def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor.tanh(x)',stride=None,trans_weights=False):
 
     #print "kernel shape", tparams[prefix+"_W"].get_value().shape[2]
 
@@ -93,10 +93,15 @@ def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor
     else:
         raise Exception(kernel_shape)
 
+    weights = tparams[prefix+'_W']
+
+    if trans_weights:
+        weights = weights.transpose(1,0,2,3)
+
     if stride == -2:
-        conv_out = deconv(state_below,tparams[prefix+'_W'].transpose(1,0,2,3),subsample=(2,2), border_mode=(2,2))
+        conv_out = deconv(state_below,weights.transpose(1,0,2,3),subsample=(2,2), border_mode=(2,2))
     else:
-        conv_out = dnn.dnn_conv(img=state_below,kerns=tparams[prefix+'_W'],subsample=(stride, stride),border_mode=padsize,precision='float32')
+        conv_out = dnn.dnn_conv(img=state_below,kerns=weights,subsample=(stride, stride),border_mode=padsize,precision='float32')
 
     conv_out = conv_out + tparams[prefix+'_b'].dimshuffle('x', 0, 'x', 'x')
 

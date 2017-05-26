@@ -29,6 +29,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn import svm
 import time
+from clamp_masks import left_half_missing
 
 import os
 slurm_name = os.environ["SLURM_JOB_ID"]
@@ -251,6 +252,8 @@ def onestep_x_to_z(p,x):
     return new_z
 
 def q_chain(p,x,num_iterations):
+
+    assert num_iterations == 3
 
     xlst = [x]
     zlst = []

@@ -46,12 +46,14 @@ def init_gparams(p):
     p = param_init_fflayer(options={},params=p,prefix='z_x_1',nin=nl*2,nout=512*4*4,ortho=False,batch_norm=True)
 
     p = param_init_convlayer(options={},params=p,prefix='z_x_2',nin=512,nout=256,kernel_len=5,batch_norm=True)
+
     p = param_init_convlayer(options={},params=p,prefix='z_x_3',nin=256*1,nout=128,kernel_len=5,batch_norm=True)
     p = param_init_convlayer(options={},params=p,prefix='z_x_4',nin=128*1,nout=3,kernel_len=5,batch_norm=False)
 
     p = param_init_convlayer(options={},params=p,prefix='x_z_1',nin=3,nout=32,kernel_len=5,batch_norm=True)
     p = param_init_convlayer(options={},params=p,prefix='x_z_2',nin=32,nout=64,kernel_len=5,batch_norm=True)
     p = param_init_convlayer(options={},params=p,prefix='x_z_3',nin=64,nout=128,kernel_len=5,batch_norm=True)
+
     p = param_init_convlayer(options={},params=p,prefix='x_z_4',nin=128,nout=256,kernel_len=5,batch_norm=True)
     p = param_init_convlayer(options={},params=p,prefix='x_z_5',nin=256,nout=512,kernel_len=5,batch_norm=True)
 
@@ -127,7 +129,7 @@ def x_to_z(p,x):
 
     e4 = convlayer(tparams=p,state_below=e3,options={},prefix='x_z_4',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    e5 = convlayer(tparams=p,state_below=e4,options={},prefix='x_z_5',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    e5 = convlayer(tparams=p,state_below=e4,options={},prefix='x_z_5',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2,trans_weights=True)
 
     eo = e5
     eo = eo.flatten(2)
@@ -268,7 +270,7 @@ if __name__ == "__main__":
     nfd = 512
 
     #3
-    num_steps = 1
+    num_steps = 3
     print "num steps", num_steps
 
     latent_sparse = False
