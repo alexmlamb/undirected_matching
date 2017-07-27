@@ -5,13 +5,13 @@ import numpy
 from utils import ortho_weight , norm_weight, init_tparams #uniform_weight
 import numpy.random as rng
 import numpy as np
-from theano.sandbox.cuda import dnn
-from theano.sandbox.cuda.basic_ops import (as_cuda_ndarray_variable,
-                                           host_from_gpu,
-                                           gpu_contiguous, HostFromGpu,
-                                           gpu_alloc_empty)
-from theano.sandbox.cuda.dnn import GpuDnnConvDesc, GpuDnnConv, GpuDnnConvGradI, dnn_conv, dnn_pool
+from theano.gpuarray import dnn
+import theano.gpuarray.basic_ops
+#from theano.gpuarray.basic_ops import (GpuContiguous, gpu_alloc_empty)
+from theano.gpuarray.dnn import GpuDnnConvDesc, GpuDnnConv, GpuDnnConvGradI, dnn_conv, dnn_pool
 
+#gpu_contiguous = GpuContiguous()
+#gpu_alloc_empty = GpuAllocEmpty()
 
 import settings
 profile = settings.profile
@@ -59,12 +59,21 @@ def ln(x, b, s):
 
 
 def deconv(X, w, subsample=(1, 1), border_mode=(0, 0), conv_mode='conv'):
-    img = gpu_contiguous(X)
-    kerns = gpu_contiguous(w)
-    desc = GpuDnnConvDesc(border_mode=border_mode, subsample=subsample, conv_mode=conv_mode)(gpu_alloc_empty(img.shape[0], kerns.shape[1], img.shape[2]*subsample[0], img.shape[3]*subsample[1]).shape, kerns.shape)
-    out = gpu_alloc_empty(img.shape[0], kerns.shape[1], img.shape[2]*subsample[0], img.shape[3]*subsample[1])
-    d_img = GpuDnnConvGradI()(kerns, img, out, desc)
-    return d_img
+    #img = gpu_contiguous(X)
+    #kerns = gpu_contiguous(w)
+
+    #desc = GpuDnnConvDesc(border_mode=border_mode, subsample=subsample, conv_mode=conv_mode)(gpu_alloc_empty(img.shape[0], kerns.shape[1], img.shape[2]*subsample[0], img.shape[3]*subsample[1]).shape, kerns.shape)
+    #out = gpu_alloc_empty(img.shape[0], kerns.shape[1], img.shape[2]*subsample[0], img.shape[3]*subsample[1])
+    
+    
+    #d_img = GpuDnnConvGradI()(kerns, img, out, desc)
+    
+
+    ups = theano.tensor.nnet.abstract_conv.bilinear_upsampling(X, 2)
+    
+    ups += T.sum(w)*0.0
+
+    return ups
 
 
 def param_init_convlayer(options,params,prefix='ff',nin=None,nout=None,kernel_len=5,ortho=True,batch_norm=False):
@@ -88,6 +97,8 @@ def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor
             padsize = 2
         else:
             padsize = 2
+    elif kernel_shape == 3:
+        padsize = 1
     elif kernel_shape == 1:
         padsize = 0
     else:
@@ -99,9 +110,13 @@ def convlayer(tparams,state_below,options,prefix='rconv',activ='lambda x: tensor
         weights = weights.transpose(1,0,2,3)
 
     if stride == -2:
-        conv_out = deconv(state_below,weights.transpose(1,0,2,3),subsample=(2,2), border_mode=(2,2))
+        conv_out = theano.tensor.nnet.abstract_conv.bilinear_upsampling(state_below, 2)
+
+        conv_out = dnn.dnn_conv(img=conv_out,kerns=weights,subsample=(1, 1),border_mode=padsize,precision='float32')
+
     else:
         conv_out = dnn.dnn_conv(img=state_below,kerns=weights,subsample=(stride, stride),border_mode=padsize,precision='float32')
+
 
     conv_out = conv_out + tparams[prefix+'_b'].dimshuffle('x', 0, 'x', 'x')
 

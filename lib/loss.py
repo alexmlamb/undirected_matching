@@ -40,17 +40,19 @@ def lsgan_loss(D_q_lst, D_p_lst, bs=True):
     dloss = 0.0
     gloss = 0.0
 
+    print "using boundary seeking objective"
+
     max_len = max(len(D_q_lst), len(D_p_lst))
 
     for i in range(len(D_p_lst)):
         D_p = D_p_lst[i]
         dloss += T.mean(T.sqr(0.0 - D_p))
-        gloss += T.mean(T.sqr(1.0 - D_p))
+        gloss += T.mean(T.sqr(0.5 - D_p))
 
     for i in range(len(D_q_lst)):
         D_q = D_q_lst[i]
         dloss += T.mean(T.sqr(1.0 - D_q))
-        gloss += T.mean(T.sqr(0.0 - D_q))
+        gloss += T.mean(T.sqr(0.5 - D_q))
 
     return dloss / max_len, gloss / max_len
 

@@ -36,6 +36,7 @@ class ConsiderConstant(theano.compile.ViewOp):
 
 consider_constant = ConsiderConstant()
 
+
 dataset = "mnist"
 #dataset = "anime"
 
