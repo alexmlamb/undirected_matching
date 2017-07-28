@@ -36,10 +36,10 @@ class ConsiderConstant(theano.compile.ViewOp):
 
 consider_constant = ConsiderConstant()
 
-dataset = "mnist"
+#dataset = "mnist"
 #dataset = "anime"
 #dataset = "svhn"
-#dataset = 'cifar'
+dataset = 'cifar'
 
 if dataset == "mnist":
     mn = gzip.open("/u/lambalex/data/mnist/mnist.pkl.gz")
@@ -101,7 +101,7 @@ nfd = 1024
 print "dataset", dataset
 
 #3
-num_steps = 1
+num_steps = 3
 print "num steps", num_steps
 
 latent_sparse = False
@@ -109,6 +109,9 @@ print "latent sparse", latent_sparse
 
 improvement_loss_weight = 0.0
 print "improvement loss weight", improvement_loss_weight
+
+sample_lst_all = []
+inp_lst_all = []
 
 def init_gparams(p):
 
@@ -124,15 +127,14 @@ def init_gparams(p):
     p = param_init_convlayer(options={},params=p,prefix='z_x_4_1',nin=128,nout=3,kernel_len=5,batch_norm=False)
     #p = param_init_convlayer(options={},params=p,prefix='z_x_4_2',nin=64,nout=3,kernel_len=5,batch_norm=False)
 
-    #p = param_init_convlayer(options={},params=p,prefix='x_z_1_1',nin=3,nout=32,kernel_len=3,batch_norm=True)
-    p = param_init_convlayer(options={},params=p,prefix='x_z_1_2',nin=3,nout=128,kernel_len=5,batch_norm=True)    
+    p = param_init_convlayer(options={},params=p,prefix='x_z_1_1',nin=3,nout=32,kernel_len=3,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_1_2',nin=32,nout=64,kernel_len=5,batch_norm=True)    
 
-    #p = param_init_convlayer(options={},params=p,prefix='x_z_2_1',nin=64,nout=128,kernel_len=3,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_2_1',nin=64,nout=128,kernel_len=3,batch_norm=True)
     p = param_init_convlayer(options={},params=p,prefix='x_z_2_2',nin=128,nout=256,kernel_len=5,batch_norm=True)
     
-    #p = param_init_convlayer(options={},params=p,prefix='x_z_3_1',nin=256,nout=512,kernel_len=5,batch_norm=True)
+    p = param_init_convlayer(options={},params=p,prefix='x_z_3_1',nin=256,nout=256,kernel_len=3,batch_norm=True)
     p = param_init_convlayer(options={},params=p,prefix='x_z_3_2',nin=256,nout=512,kernel_len=5,batch_norm=True)
-
 
     p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=512*4*4,nout=nl,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=512*4*4,nout=nl,ortho=False,batch_norm=False)
@@ -158,8 +160,8 @@ def init_dparams(p):
     p = param_init_fflayer(options={},params=p,prefix='D_o_2',nin=nfd,nout=1,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='D_o_3',nin=nfd,nout=1,ortho=False,batch_norm=False)
 
-    p = param_init_convlayer(options={},params=p,prefix='D_o_4',nin=32,nout=1,kernel_len=5,batch_norm=False)
-    p = param_init_convlayer(options={},params=p,prefix='D_o_5',nin=128,nout=1,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='D_o_4',nin=128,nout=1,kernel_len=5,batch_norm=False)
+    p = param_init_convlayer(options={},params=p,prefix='D_o_5',nin=256,nout=1,kernel_len=5,batch_norm=False)
     p = param_init_convlayer(options={},params=p,prefix='D_o_6',nin=512,nout=1,kernel_len=5,batch_norm=False)
     #p = param_init_convlayer(options={},params=p,prefix='D_o_7',nin=64,nout=1,kernel_len=5,batch_norm=False)
 
@@ -181,10 +183,11 @@ def z_to_x(p,z):
     d2_1 = convlayer(tparams=p,state_below=d1_1,options={},prefix='z_x_3_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
     #d2_2 = convlayer(tparams=p,state_below=d2_1,options={},prefix='z_x_3_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
 
-    d3_1 = convlayer(tparams=p,state_below=d2_1,options={},prefix='z_x_4_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=-2)
     #d3_2 = convlayer(tparams=p,state_below=d3_1,options={},prefix='z_x_4_2',activ='lambda x: x',stride=1)
 
-    x_new = d3_1.flatten(2)
+    d_last = convlayer(tparams=p,state_below=d2_1,options={},prefix='z_x_4_1',activ='lambda x: x',stride=-2)
+
+    x_new = d_last.flatten(2)
 
     return x_new
 
@@ -192,14 +195,14 @@ def x_to_z(p,x):
 
     xr = x.reshape((64,3,32,32))
 
-    #e1_1 = convlayer(tparams=p,state_below=xr,options={},prefix='x_z_1_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
-    e1_2 = convlayer(tparams=p,state_below=xr,options={},prefix='x_z_1_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    e1_1 = convlayer(tparams=p,state_below=xr,options={},prefix='x_z_1_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
+    e1_2 = convlayer(tparams=p,state_below=e1_1,options={},prefix='x_z_1_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    #e2_1 = convlayer(tparams=p,state_below=e1_2,options={},prefix='x_z_2_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
-    e2_2 = convlayer(tparams=p,state_below=e1_2,options={},prefix='x_z_2_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    e2_1 = convlayer(tparams=p,state_below=e1_2,options={},prefix='x_z_2_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
+    e2_2 = convlayer(tparams=p,state_below=e2_1,options={},prefix='x_z_2_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    #e3_1 = convlayer(tparams=p,state_below=e2_2,options={},prefix='x_z_3_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
-    e3_2 = convlayer(tparams=p,state_below=e2_2,options={},prefix='x_z_3_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    e3_1 = convlayer(tparams=p,state_below=e2_2,options={},prefix='x_z_3_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
+    e3_2 = convlayer(tparams=p,state_below=e3_1,options={},prefix='x_z_3_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
     eo = e3_2
     eo = eo.flatten(2)
@@ -221,16 +224,16 @@ def discriminator(p,x,z):
 
     xr = x.reshape((64,3,32,32))
 
-    dc_1_1 = convlayer(tparams=p,state_below=xr,options={},prefix='DC_1_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
-    dc_1_2 = convlayer(tparams=p,state_below=dc_1_1,options={},prefix='DC_1_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    #dc_1_1 = convlayer(tparams=p,state_below=xr,options={},prefix='DC_1_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
+    dc_1_1 = convlayer(tparams=p,state_below=xr,options={},prefix='DC_1_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    dc_2_1 = convlayer(tparams=p,state_below=dc_1_2,options={},prefix='DC_2_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
-    dc_2_2 = convlayer(tparams=p,state_below=dc_2_1,options={},prefix='DC_2_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    #dc_2_1 = convlayer(tparams=p,state_below=dc_1_2,options={},prefix='DC_2_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
+    dc_2_1 = convlayer(tparams=p,state_below=dc_1_1,options={},prefix='DC_2_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    dc_3_1 = convlayer(tparams=p,state_below=dc_2_2,options={},prefix='DC_3_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
-    dc_3_2 = convlayer(tparams=p,state_below=dc_3_1,options={},prefix='DC_3_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
+    #dc_3_1 = convlayer(tparams=p,state_below=dc_2_2,options={},prefix='DC_3_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=1)
+    dc_3_1 = convlayer(tparams=p,state_below=dc_2_1,options={},prefix='DC_3_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',stride=2)
 
-    inp = join2(z,dc_3_2.flatten(2))
+    inp = join2(z,dc_3_1.flatten(2))
 
     h1 = fflayer(tparams=p,state_below=inp,options={},prefix='D_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',mean_ln=False)
 
@@ -246,10 +249,9 @@ def discriminator(p,x,z):
     D5 = convlayer(tparams=p,state_below=dc_2_1,options={},prefix='D_o_5',activ='lambda x: x',stride=2)
     D6 = convlayer(tparams=p,state_below=dc_3_1,options={},prefix='D_o_6',activ='lambda x: x',stride=2)
 
-    D7 = convlayer(tparams=p,state_below=dc_1_2,options={},prefix='D_o_7',activ='lambda x: x',stride=2)
 
     print "special thing in D"
-    return [D1,D2,D3,D4,D5,D6,D7*0.0], h3
+    return [D1,D2,D3,D4,D5,D6], h3
 
 def p_chain(p, z, num_iterations):
     zlst = [z]
@@ -327,15 +329,19 @@ print p_lst_z
 print q_lst_x
 print q_lst_z
 
-#D_p_lst_3,_ = discriminator(dparams, p_lst_x[2], p_lst_z[2])
+#D_p_lst_3,_ = discriminator(dparams, p_lst_x[-3], p_lst_z[-3])
 
-#D_p_lst_2,_ = discriminator(dparams, p_lst_x[1], p_lst_z[1])
+#D_p_lst_2,_ = discriminator(dparams, p_lst_x[-2], p_lst_z[-2])
 
-D_p_lst_1,_ = discriminator(dparams, p_lst_x[0], p_lst_z[0])
+D_p_lst_1,_ = discriminator(dparams, p_lst_x[-1], p_lst_z[-1])
 
 D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
 
 dloss, gloss = lsgan_loss(D_q_lst, D_p_lst_1)
+
+if num_steps > 1:
+    print "add z rec loss w/ consider constant 0.0001"
+    gloss += 0.0001 * T.sum((consider_constant(p_lst_z[-2]) - p_lst_z[-1])**2)
 
 print "single disc"
 print "not using improvement objective"
@@ -427,13 +433,39 @@ if __name__ == '__main__':
                 new_z = func_x_to_z(new_x)
                 print "printing element of p_chain", j
                 plot_images(new_x, "plots/" + slurm_name + "_pchain_" + str(j) + ".png")
-        
+            
+
             new_z = rng.normal(size=(64,nl)).astype('float32')
             for j in range(0,20):
                 new_x = func_z_to_x(new_z)
                 new_x = merge_images(new_x, x_in)
                 new_z = func_x_to_z(new_x)
                 plot_images(new_x, "plots/" + slurm_name + "_inpainting_" + str(j) + ".png")
+
+            for k in range(0,15):
+                print "generating extra samples and reconstructions to save", k
+
+                new_z = rng.normal(size=(64,nl)).astype('float32')
+                for j in range(0,4):
+                    new_x = func_z_to_x(new_z)
+                    new_z = func_x_to_z(new_x)
+
+                sample_lst_all.append(new_x)
+
+                new_z = rng.normal(size=(64,nl)).astype('float32')
+                x_in = normalize(cifarData.getBatch()['x']).reshape((64,32*32*3))
+
+                for j in range(0,4):
+                    new_x = func_z_to_x(new_z)
+                    new_x = merge_images(new_x, x_in)
+                    new_z = func_x_to_z(new_x)
+    
+                inp_lst_all.append(new_x)
+
+            np.savez_compressed(open("saved_data/" + slurm_name + "_inpainting.bin", "w"),np.vstack(inp_lst_all).round(3))
+            np.savez_compressed(open("saved_data/" + slurm_name + "_samples.bin", "w"),np.vstack(sample_lst_all).round(3))
+
+            print "Number of result batches saved", len(sample_lst_all), len(inp_lst_all)
 
 
 
