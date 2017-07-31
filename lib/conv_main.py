@@ -36,10 +36,10 @@ class ConsiderConstant(theano.compile.ViewOp):
 
 consider_constant = ConsiderConstant()
 
-#dataset = "mnist"
+dataset = "mnist"
 #dataset = "anime"
 #dataset = "svhn"
-dataset = 'cifar'
+#dataset = 'cifar'
 
 if dataset == "mnist":
     mn = gzip.open("/u/lambalex/data/mnist/mnist.pkl.gz")
@@ -441,8 +441,10 @@ if __name__ == '__main__':
                 new_x = merge_images(new_x, x_in)
                 new_z = func_x_to_z(new_x)
                 plot_images(new_x, "plots/" + slurm_name + "_inpainting_" + str(j) + ".png")
+                print "inpainting step", j, "error", ((x_in - new_x)**2).mean()
 
             for k in range(0,15):
+                continue
                 print "generating extra samples and reconstructions to save", k
 
                 new_z = rng.normal(size=(64,nl)).astype('float32')
@@ -462,10 +464,11 @@ if __name__ == '__main__':
     
                 inp_lst_all.append(new_x)
 
-            np.savez_compressed(open("saved_data/" + slurm_name + "_inpainting.bin", "w"),np.vstack(inp_lst_all).round(3))
-            np.savez_compressed(open("saved_data/" + slurm_name + "_samples.bin", "w"),np.vstack(sample_lst_all).round(3))
+            if False:
+                np.savez_compressed(open("saved_data/" + slurm_name + "_inpainting.bin", "w"),np.vstack(inp_lst_all).round(3))
+                np.savez_compressed(open("saved_data/" + slurm_name + "_samples.bin", "w"),np.vstack(sample_lst_all).round(3))
 
-            print "Number of result batches saved", len(sample_lst_all), len(inp_lst_all)
+                print "Number of result batches saved", len(sample_lst_all), len(inp_lst_all)
 
 
 

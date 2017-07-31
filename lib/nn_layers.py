@@ -186,6 +186,42 @@ def fflayer(tparams,
 
     return eval(activ)(preactivation)
 
+def param_init_ffcoupling(params, prefix, ndim):
+
+    assert (ndim%2 == 0)
+
+    params[prefix + "_Wf"] = norm_weight(ndim/2,ndim/2)
+    params[prefix + "_Wg"] = norm_weight(ndim/2,ndim/2)
+    params[prefix + "_bf"] = zero_vector(ndim/2)
+    params[prefix + "_bg"] = zero_vector(ndim/2)
+
+    return params
+
+def ffcoupling(tparams, prefix, inp, ndim, mode):
+
+    assert (mode == "forward") or (mode == "reverse")
+
+    inp1 = inp[:,:ndim/2]
+    inp2 = inp[:,ndim/2:]
+
+    Wf = tparams[prefix + "_Wf"]
+    Wg = tparams[prefix + "_Wg"]
+    bf = tparams[prefix + "_bf"]
+    bg = tparams[prefix + "_bg"]
+
+    activ = T.nnet.relu
+
+    if mode == "forward":
+        out1 = inp1 + activ(T.dot(inp2, Wf) + bf)
+        out2 = inp2 + activ(T.dot(out1, Wg) + bg)
+    elif mode == "reverse":
+        out2 = inp2 - activ(T.dot(inp1, Wg) + bg)
+        out1 = inp1 - activ(T.dot(out2, Wf) + bf)
+
+    out = T.concatenate([out1,out2], axis = 1)
+
+    return out
+
 # GRU layer
 def param_init_gru(options, param, prefix='gru', nin=None, dim=None):
 

@@ -27,6 +27,9 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+import os
+slurm_name = os.environ["SLURM_JOB_ID"]
+
 class ConsiderConstant(theano.compile.ViewOp):
     def grad(self, args, g_outs):
         return [T.zeros_like(g_out) for g_out in g_outs]
@@ -43,19 +46,29 @@ validx,validy = valid
 testx, testy = test
 
 m = 784
-nl = 128
-nfg = 1024
+nl = 64
+nfg = 128
 nfd = 1024
+num_steps = 3
+num_inf_layers = 1
+
+print "num units gen", nfg
+print "num units disc", nfd
+print "num latent", nl
+print "num steps", num_steps
+print "num inf layers", num_inf_layers
 
 def init_gparams(p):
 
 
-    p = param_init_fflayer(options={},params=p,prefix='z_x_1',nin=nl,nout=nfg,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='z_x_2',nin=nfg,nout=nfg,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='z_x_1',nin=nl,nout=nfg,ortho=False,batch_norm=True)
+    p = param_init_fflayer(options={},params=p,prefix='z_x_2',nin=nfg,nout=nfg,ortho=False,batch_norm=True)
     p = param_init_fflayer(options={},params=p,prefix='z_x_3',nin=nfg,nout=m,ortho=False,batch_norm=False)
 
-    p = param_init_fflayer(options={},params=p,prefix='x_z_1',nin=m,nout=nfg,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='x_z_2',nin=nfg,nout=nfg,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='x_z_1',nin=m,nout=nfg,ortho=False,batch_norm=True)
+    
+    for k in range(0, num_inf_layers):
+        p = param_init_fflayer(options={},params=p,prefix='x_z_e' + str(k),nin=nfg,nout=nfg,ortho=False,batch_norm=True)
 
     p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=nfg,nout=nl,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=nfg,nout=nl,ortho=False,batch_norm=False)
@@ -63,8 +76,6 @@ def init_gparams(p):
     return init_tparams(p)
 
 def init_dparams(p):
-
-
 
     p = param_init_fflayer(options={},params=p,prefix='D_1',nin=m+nl,nout=nfd,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='D_2',nin=nfd,nout=nfd,ortho=False,batch_norm=False)
@@ -111,9 +122,13 @@ def x_to_z(p,x):
 
     h1 = fflayer(tparams=p,state_below=x,options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
 
-    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='x_z_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
-    sigma = fflayer(tparams=p,state_below=h2,options={},prefix='x_z_mu',activ='lambda x: x',batch_norm=False)
-    mu = fflayer(tparams=p,state_below=h2,options={},prefix='x_z_sigma',activ='lambda x: x',batch_norm=False)
+    hn = h1
+
+    for k in range(0,num_inf_layers):
+        hn = fflayer(tparams=p,state_below=hn,options={},prefix='x_z_e' + str(k),activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+    
+    sigma = fflayer(tparams=p,state_below=hn,options={},prefix='x_z_mu',activ='lambda x: x',batch_norm=False)
+    mu = fflayer(tparams=p,state_below=hn,options={},prefix='x_z_sigma',activ='lambda x: x',batch_norm=False)
 
     eps = srng.normal(size=sigma.shape)
 
@@ -134,7 +149,7 @@ def discriminator(p,x,z):
 
     h2 = fflayer(tparams=p,state_below=h1,options={},prefix='D_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)', mean_ln=False)
 
-    h3 = fflayer(tparams=p,state_below=h1,options={},prefix='D_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)', mean_ln=False)
+    h3 = fflayer(tparams=p,state_below=h2,options={},prefix='D_3',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)', mean_ln=False)
 
     D1 = fflayer(tparams=p,state_below=h1,options={},prefix='D_o_1',activ='lambda x: x',batch_norm=False)
     D2 = fflayer(tparams=p,state_below=h2,options={},prefix='D_o_2',activ='lambda x: x',batch_norm=False)
@@ -186,7 +201,7 @@ z_in = T.matrix()
 x_in = T.matrix()
 true_y = T.ivector()
 
-p_lst_x,p_lst_z = p_chain(gparams, z_in, 3)
+p_lst_x,p_lst_z = p_chain(gparams, z_in, num_steps)
 
 q_lst_x,q_lst_z = q_chain(gparams, x_in)
 
@@ -230,6 +245,7 @@ dgupdates.update(gupdates)
 
 train_disc_gen = theano.function([x_in,z_in],outputs=[z_inf,dloss,p_lst_x[-1]],updates=dgupdates)
 train_classifier = theano.function(inputs = [z_in, true_y], outputs=[cacc], updates=cupdates)
+test_classifier = theano.function(inputs = [z_in, true_y], outputs=[cacc])
 get_zinf = theano.function([x_in], outputs=z_inf)
 
 reconstruct = theano.function([x_in], outputs = z_to_x(gparams,x_to_z(gparams,x_in)))
@@ -251,9 +267,9 @@ if __name__ == '__main__':
         if iteration % 1000 == 0:
             print iteration, "acc", acc
             print "dloss", dloss
-            plot_images(gen_x.reshape((64,1,28,28)), "plots/gen.png")
-            plot_images(reconstruct(x_in).reshape((64,1,28,28)), "plots/rec.png")
-            plot_images(x_in.reshape((64,1,28,28)), "plots/original.png")
+            plot_images(gen_x.reshape((64,1,28,28)), "plots/" + slurm_name + "_gen_new.png")
+            plot_images(reconstruct(x_in).reshape((64,1,28,28)), "plots/" + slurm_name + "_rec_new.png")
+            plot_images(x_in.reshape((64,1,28,28)), "plots/" + slurm_name + "_original.png")
             
             z_inf = get_zinf(trainx[0:200])
             print "z_inf shape", z_inf.shape
@@ -261,6 +277,14 @@ if __name__ == '__main__':
             plt.savefig("plots/zinf.png")
             plt.clf()
 
+
+        if iteration % 50000 == 0:
+
+            test_acc_lst=[]
+            for b in range(0,10000,500):
+                zin = get_zinf(testx[b:b+500])
+                test_acc_lst.append(test_classifier(zin, testy[b:b+500].astype('int32'))[0])
+            print "test acc", sum(test_acc_lst) / len(test_acc_lst)
 
 
 

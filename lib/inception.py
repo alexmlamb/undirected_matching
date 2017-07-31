@@ -30,7 +30,8 @@ softmax = None
 
 # Call this function with list of images. Each of elements should be a
 # numpy array with values ranging from 0 to 255.
-def get_inception_score(images, splits=10):
+#was 10 splits
+def get_inception_score(images, splits=2):
   assert(type(images) == list)
   assert(type(images[0]) == np.ndarray)
   assert(len(images[0].shape) == 3)
@@ -41,7 +42,7 @@ def get_inception_score(images, splits=10):
     img = img.astype(np.float32)
     inps.append(np.expand_dims(img, 0))
   bs = 500
-  with tf.Session(config=tf.ConfigProto(log_device_placement=True)) as sess:
+  with tf.Session(config=tf.ConfigProto(log_device_placement=False)) as sess:
     preds = []
     n_batches = int(math.ceil(float(len(inps)) / float(bs)))
     for i in range(n_batches):
@@ -118,12 +119,13 @@ if softmax is None:
   _init_inception()
 
 
-data_file = "saved_data/12480_inpainting.bin"
+data_file = sys.argv[1]#"saved_data/12480_inpainting.bin"
 
 data = np.load(open(data_file, "r"))['arr_0']
 
 data = data.reshape((data.shape[0],3,32,32)).transpose(0,2,3,1)*255.0
 
+print("Shape before pruning")
 print(data.shape)
 print(data.min())
 print(data.max())
@@ -133,7 +135,7 @@ data_lst = []
 for i in range(0, data.shape[0] - data.shape[0]%500):
     data_lst.append(data[i])
 
-data_lst = data_lst[4000:5000]
+data_lst = data_lst[100000:150000]
 
 print(len(data_lst))
 

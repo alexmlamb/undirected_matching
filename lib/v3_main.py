@@ -46,12 +46,12 @@ validx,validy = valid
 testx, testy = test
 
 m = 784
-nl = 1024
+nl = 128
 #128 works for nl
 nfg = 1024
 nfd = 1024
 
-num_steps = 3
+num_steps = 1
 print "num steps", num_steps
 
 train_classifier_separate = True
@@ -60,18 +60,18 @@ print "train classifier separate", train_classifier_separate
 skip_conn = False
 print "skip conn", skip_conn
 
-latent_sparse = True
+latent_sparse = False
 print "latent sparse", latent_sparse
 
 def init_gparams(p):
 
 
-    p = param_init_fflayer(options={},params=p,prefix='z_x_1',nin=nl,nout=nfg,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='z_x_2',nin=nfg,nout=nfg,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='z_x_1',nin=nl,nout=nfg,ortho=False,batch_norm=True)
+    p = param_init_fflayer(options={},params=p,prefix='z_x_2',nin=nfg,nout=nfg,ortho=False,batch_norm=True)
     p = param_init_fflayer(options={},params=p,prefix='z_x_3',nin=nfg,nout=m,ortho=False,batch_norm=False)
 
-    p = param_init_fflayer(options={},params=p,prefix='x_z_1',nin=m,nout=nfg,ortho=False,batch_norm=False)
-    p = param_init_fflayer(options={},params=p,prefix='x_z_2',nin=nfg,nout=nfg,ortho=False,batch_norm=False)
+    p = param_init_fflayer(options={},params=p,prefix='x_z_1',nin=m,nout=nfg,ortho=False,batch_norm=True)
+    p = param_init_fflayer(options={},params=p,prefix='x_z_2',nin=nfg,nout=nfg,ortho=False,batch_norm=True)
 
     p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=nfg,nout=nl,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=nfg,nout=nl,ortho=False,batch_norm=False)
@@ -118,23 +118,21 @@ def classifier(p,z,x,true_y):
 def z_to_x(p,z):
 
 
-    h1 = fflayer(tparams=p,state_below=z,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
-    
+    h1 = fflayer(tparams=p,state_below=z,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
 
-    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='z_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='z_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
 
-
-    x = fflayer(tparams=p,state_below=h2,options={},prefix='z_x_3',activ='lambda x: x',batch_norm=False)
+    x = fflayer(tparams=p,state_below=h2,options={},prefix='z_x_3',activ='lambda x: x')
 
     return x
 
 def x_to_z(p,x):
 
-    h1 = fflayer(tparams=p,state_below=x,options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+    h1 = fflayer(tparams=p,state_below=x,options={},prefix='x_z_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
 
-    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='x_z_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
-    sigma = fflayer(tparams=p,state_below=h2,options={},prefix='x_z_mu',activ='lambda x: x',batch_norm=False)
-    mu = fflayer(tparams=p,state_below=h2,options={},prefix='x_z_sigma',activ='lambda x: x',batch_norm=False)
+    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='x_z_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
+    sigma = fflayer(tparams=p,state_below=h2,options={},prefix='x_z_mu',activ='lambda x: x')
+    mu = fflayer(tparams=p,state_below=h2,options={},prefix='x_z_sigma',activ='lambda x: x')
 
     eps = srng.normal(size=sigma.shape)
 
@@ -146,7 +144,7 @@ def x_to_z(p,x):
 
 def discriminator(p,x,z):
 
-    inp = join2(x,z)
+    inp = join2(x,z*0.0)
 
     h1 = fflayer(tparams=p,state_below=inp,options={},prefix='D_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',mean_ln=False)
 
@@ -283,8 +281,6 @@ get_pchain = theano.function([z_in], outputs = p_lst_x_long)
 
 reconstruct = theano.function([x_in], outputs = z_to_x(gparams,x_to_z(gparams,x_in)))
 
-print "TRYING WITH NO INITIAL NOISE"
-#TODO: remove
 
 if __name__ == '__main__':
 
@@ -295,7 +291,6 @@ if __name__ == '__main__':
         if latent_sparse:
             z_in[:,128:] *= 0.0
 
-        z_in *= 0.0
 
         r = random.randint(0,50000-64)
 
@@ -326,4 +321,6 @@ if __name__ == '__main__':
             for j in range(0,len(p_chain)):
                 print "printing element of p_chain", j
                 plot_images(p_chain[j].reshape((64,1,28,28)), "plots/" + slurm_name + "_pchain_" + str(j) + ".png")
+
+
 
