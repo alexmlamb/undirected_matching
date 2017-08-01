@@ -13,7 +13,7 @@ sys.path.append("/u/lambalex/DeepLearning/undirected_matching/lib")
 
 import theano
 import theano.tensor as T
-from nn_layers import fflayer, param_init_fflayer
+from nn_layers import fflayer, param_init_fflayer, param_init_ffcoupling, ffcoupling
 from utils import init_tparams, join2, srng, dropout
 from loss import accuracy, crossent
 import lasagne
@@ -46,11 +46,11 @@ validx,validy = valid
 testx, testy = test
 
 m = 784
-nl = 64
-nfg = 128
+nl = 128
+nfg = 1024
 nfd = 1024
 num_steps = 3
-num_inf_layers = 1
+num_inf_layers = 3
 
 print "num units gen", nfg
 print "num units disc", nfd
@@ -68,7 +68,8 @@ def init_gparams(p):
     p = param_init_fflayer(options={},params=p,prefix='x_z_1',nin=m,nout=nfg,ortho=False,batch_norm=True)
     
     for k in range(0, num_inf_layers):
-        p = param_init_fflayer(options={},params=p,prefix='x_z_e' + str(k),nin=nfg,nout=nfg,ortho=False,batch_norm=True)
+        #p = param_init_fflayer(options={},params=p,prefix='x_z_e' + str(k),nin=nfg,nout=nfg,ortho=False,batch_norm=True)
+        p = param_init_ffcoupling(params=p, prefix="x_z_e" + str(k), ndim=nfg)
 
     p = param_init_fflayer(options={},params=p,prefix='x_z_mu',nin=nfg,nout=nl,ortho=False,batch_norm=False)
     p = param_init_fflayer(options={},params=p,prefix='x_z_sigma',nin=nfg,nout=nl,ortho=False,batch_norm=False)
@@ -109,9 +110,14 @@ def z_to_x(p,z):
 
 
     h1 = fflayer(tparams=p,state_below=z,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
-    
 
-    h2 = fflayer(tparams=p,state_below=h1,options={},prefix='z_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+    hn = h1
+
+    print "running reverse, usually run z_x reverse"
+    for k in reversed(range(0, num_inf_layers)):
+        hn = ffcoupling(p, "x_z_e" + str(k), hn, ndim=nfg, mode='reverse')
+
+    h2 = fflayer(tparams=p,state_below=hn,options={},prefix='z_x_2',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
 
 
     x = fflayer(tparams=p,state_below=h2,options={},prefix='z_x_3',activ='lambda x: tensor.nnet.sigmoid(x)',batch_norm=False)
@@ -125,8 +131,10 @@ def x_to_z(p,x):
     hn = h1
 
     for k in range(0,num_inf_layers):
-        hn = fflayer(tparams=p,state_below=hn,options={},prefix='x_z_e' + str(k),activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
+        #hn = fflayer(tparams=p,state_below=hn,options={},prefix='x_z_e' + str(k),activ='lambda x: tensor.nnet.relu(x,alpha=0.02)',batch_norm=True)
     
+        hn = ffcoupling(p, "x_z_e" + str(k), hn, ndim=nfg, mode="forward")
+
     sigma = fflayer(tparams=p,state_below=hn,options={},prefix='x_z_mu',activ='lambda x: x',batch_norm=False)
     mu = fflayer(tparams=p,state_below=hn,options={},prefix='x_z_sigma',activ='lambda x: x',batch_norm=False)
 
@@ -267,10 +275,13 @@ if __name__ == '__main__':
         if iteration % 1000 == 0:
             print iteration, "acc", acc
             print "dloss", dloss
+            rec_x = reconstruct(x_in)
             plot_images(gen_x.reshape((64,1,28,28)), "plots/" + slurm_name + "_gen_new.png")
-            plot_images(reconstruct(x_in).reshape((64,1,28,28)), "plots/" + slurm_name + "_rec_new.png")
+            plot_images(rec_x.reshape((64,1,28,28)), "plots/" + slurm_name + "_rec_new.png")
             plot_images(x_in.reshape((64,1,28,28)), "plots/" + slurm_name + "_original.png")
             
+            print "reconstruction error", ((rec_x - x_in)**2).mean()
+
             z_inf = get_zinf(trainx[0:200])
             print "z_inf shape", z_inf.shape
             plt.scatter(z_inf[:,0], z_inf[:,1],c=trainy[0:200])
