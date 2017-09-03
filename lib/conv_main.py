@@ -49,8 +49,8 @@ if dataset == "mnist":
     trainx,trainy = train
     
     
-    #newtx = trainx[(trainy<2) | (trainy>8)]
-    #newty = trainy[(trainy<2) | (trainy>8)]
+    #newtx = trainx[(trainy<2)]# | (trainy>8)]
+    #newty = trainy[(trainy<2)]# | (trainy>8)]
     #trainx = newtx
     #trainy = newty
     
@@ -92,7 +92,7 @@ elif dataset == 'cifar':
 
     num_examples = 50000
 
-nl = 128
+nl = 784
 print "num latent", nl
 #128 works for nl
 nfg = 1024
@@ -101,7 +101,7 @@ nfd = 1024
 print "dataset", dataset
 
 #3
-num_steps = 3
+num_steps = 1
 print "num steps", num_steps
 
 latent_sparse = False
@@ -110,13 +110,17 @@ print "latent sparse", latent_sparse
 improvement_loss_weight = 0.0
 print "improvement loss weight", improvement_loss_weight
 
+use_entropy_penalty = True
+print "use entropy penalty", use_entropy_penalty
+
 sample_lst_all = []
 inp_lst_all = []
 
 def init_gparams(p):
 
     print "EXTRA DEPTH BOTH GEN AND INF"
-    p = param_init_fflayer(options={},params=p,prefix='z_x_1',nin=nl*2,nout=512*4*4,ortho=False,batch_norm=True)
+    p = param_init_fflayer(options={},params=p,prefix='z_x_1_a',nin=nl,nout=256*4*4,ortho=False,batch_norm=True)
+    p = param_init_fflayer(options={},params=p,prefix='z_x_1_b',nin=nl,nout=256*4*4,ortho=False,batch_norm=True)
 
     p = param_init_convlayer(options={},params=p,prefix='z_x_2_1',nin=512,nout=256,kernel_len=5,batch_norm=True)
     #p = param_init_convlayer(options={},params=p,prefix='z_x_2_2',nin=256,nout=256,kernel_len=3,batch_norm=True)
@@ -168,12 +172,15 @@ def init_dparams(p):
     return init_tparams(p)
 
 
-def z_to_x(p,z):
+def z_to_x(p,z,return_extra_noise=False):
 
-    print "NO extra noise input"
-    z_inp = join2(z, 0.0*srng.normal(size=z.shape))
+    print "extra noise input"
+    z_inp = 1.0*srng.normal(size=z.shape)
 
-    d0 = fflayer(tparams=p,state_below=z_inp,options={},prefix='z_x_1',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
+    d0_a = fflayer(tparams=p,state_below=z,options={},prefix='z_x_1_a',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
+    d0_b = fflayer(tparams=p,state_below=z_inp,options={},prefix='z_x_1_b',activ='lambda x: tensor.nnet.relu(x,alpha=0.02)')
+
+    d0 = join2(d0_a, d0_b)
 
     d0 = d0.reshape((64,512,4,4))
 
@@ -189,9 +196,12 @@ def z_to_x(p,z):
 
     x_new = d_last.flatten(2)
 
-    return x_new
+    if return_extra_noise:
+        return x_new, z_inp
+    else:
+        return x_new
 
-def x_to_z(p,x):
+def x_to_z(p,x,return_sigmas=False):
 
     xr = x.reshape((64,3,32,32))
 
@@ -212,12 +222,15 @@ def x_to_z(p,x):
 
     eps = srng.normal(size=sigma.shape)
 
-    z_new = eps*T.nnet.sigmoid(sigma) + mu
-    print "turned on injected noise in x->z connection"
+    z_new = 1.0*eps*T.nnet.sigmoid(sigma) + mu
+    print "turned ON injected noise in x->z connection"
 
     z_new = (z_new - T.mean(z_new, axis=0, keepdims=True)) / (0.001 + T.std(z_new, axis=0, keepdims=True))
 
-    return z_new
+    if return_sigmas:
+        return z_new, T.nnet.sigmoid(sigma)
+    else:
+        return z_new
 
 
 def discriminator(p,x,z):
@@ -305,10 +318,10 @@ def q_chain(p,x,num_iterations):
 
     xlst = [x]
     zlst = []
-    new_z = x_to_z(p, inverse_sigmoid(xlst[-1]))
+    new_z,sigmas = x_to_z(p, inverse_sigmoid(xlst[-1]),return_sigmas=True)
     zlst.append(new_z)
 
-    return xlst, zlst
+    return xlst, zlst, sigmas
 
 gparams = init_gparams({})
 dparams = init_dparams({})
@@ -318,7 +331,7 @@ x_in = T.matrix()
 
 p_lst_x,p_lst_z = p_chain(gparams, z_in, num_steps)
 
-q_lst_x,q_lst_z = q_chain(gparams, x_in, num_steps)
+q_lst_x,q_lst_z,sigmas = q_chain(gparams, x_in, num_steps)
 
 #p_lst_x_long,p_lst_z_long = p_chain(gparams, z_in, 19)
 
@@ -338,6 +351,17 @@ D_p_lst_1,_ = discriminator(dparams, p_lst_x[-1], p_lst_z[-1])
 D_q_lst,D_feat_q = discriminator(dparams, q_lst_x[-1], q_lst_z[-1])
 
 dloss, gloss = lsgan_loss(D_q_lst, D_p_lst_1)
+
+norm2 = lambda inp: T.sqrt(T.sum(T.sqr(inp)))
+
+print "penalizing noise injection in x->z, 0.1"
+
+gloss += 0.1 * norm2(T.log(sigmas))
+
+xgen, znoise_extra = z_to_x(gparams, z_in, return_extra_noise=True)
+
+print "penalizing noise injection in z->x, 0.0"
+gloss += 0.0 * norm2(T.grad(norm2(xgen), znoise_extra))
 
 if num_steps > 1:
     print "add z rec loss w/ consider constant 0.0001"

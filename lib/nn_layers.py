@@ -192,6 +192,9 @@ def param_init_ffcoupling(params, prefix, ndim):
 
     params[prefix + "_Wf"] = norm_weight(ndim/2,ndim/2)
     params[prefix + "_Wg"] = norm_weight(ndim/2,ndim/2)
+    params[prefix + "_Wf2"] = norm_weight(ndim/2,ndim/2)
+    params[prefix + "_Wg2"] = norm_weight(ndim/2,ndim/2)
+
     params[prefix + "_bf"] = zero_vector(ndim/2)
     params[prefix + "_bg"] = zero_vector(ndim/2)
 
@@ -205,18 +208,20 @@ def ffcoupling(tparams, prefix, inp, ndim, mode):
     inp2 = inp[:,ndim/2:]
 
     Wf = tparams[prefix + "_Wf"]
+    Wf2 = tparams[prefix + "_Wf2"]
     Wg = tparams[prefix + "_Wg"]
+    Wg2 = tparams[prefix + "_Wg2"]
     bf = tparams[prefix + "_bf"]
     bg = tparams[prefix + "_bg"]
 
     activ = T.nnet.relu
 
     if mode == "forward":
-        out1 = inp1 + activ(T.dot(inp2, Wf) + bf)
-        out2 = inp2 + activ(T.dot(out1, Wg) + bg)
+        out1 = inp1 + T.dot(activ(T.dot(inp2, Wf) + bf), Wf2)
+        out2 = inp2 + T.dot(activ(T.dot(out1, Wg) + bg), Wg2)
     elif mode == "reverse":
-        out2 = inp2 - activ(T.dot(inp1, Wg) + bg)
-        out1 = inp1 - activ(T.dot(out2, Wf) + bf)
+        out2 = inp2 - T.dot(activ(T.dot(inp1, Wg) + bg), Wg2)
+        out1 = inp1 - T.dot(activ(T.dot(out2, Wf) + bf), Wf2)
 
     out = T.concatenate([out1,out2], axis = 1)
 
